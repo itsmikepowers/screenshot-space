@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct ScreenshotGalleryView: View {
-    @StateObject private var store = ScreenshotStore()
+    @ObservedObject private var store = ScreenshotStore.shared
     @State private var selection = Set<URL>()
     @State private var lastClickedID: URL?
     @State private var previewItem: ScreenshotItem?

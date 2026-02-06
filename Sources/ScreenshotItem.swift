@@ -9,6 +9,8 @@ struct ScreenshotItem: Identifiable, Equatable {
     let filename: String
     let date: Date
     let thumbnail: NSImage
+    var extractedText: String?
+    var wordCount: Int?
 
     var dateString: String {
         let formatter = DateFormatter()
@@ -25,14 +27,19 @@ struct ScreenshotItem: Identifiable, Equatable {
 // MARK: - Store
 
 class ScreenshotStore: ObservableObject {
+    /// Shared instance so Gallery and Search use the same store.
+    static let shared = ScreenshotStore()
+
     @Published var screenshots: [ScreenshotItem] = []
 
     private let directory = ScreenshotManager.saveDirectory
     private var directoryMonitor: DispatchSourceFileSystemObject?
+    private var isBackfilling = false
 
     init() {
         loadScreenshots()
         startWatching()
+        backfillOCR()
     }
 
     deinit {
@@ -62,11 +69,15 @@ class ScreenshotStore: ObservableObject {
                           let date = values.creationDate,
                           let thumbnail = Self.loadThumbnail(from: url) else { return nil }
 
+                    let metadata = OCRProcessor.loadMetadata(for: url)
+
                     return ScreenshotItem(
                         url: url,
                         filename: url.deletingPathExtension().lastPathComponent,
                         date: date,
-                        thumbnail: thumbnail
+                        thumbnail: thumbnail,
+                        extractedText: metadata?.extractedText,
+                        wordCount: metadata?.wordCount
                     )
                 }
                 .sorted { $0.date > $1.date }
@@ -90,7 +101,8 @@ class ScreenshotStore: ObservableObject {
         )
 
         source.setEventHandler { [weak self] in
-            self?.loadScreenshots()
+            guard let self = self, !self.isBackfilling else { return }
+            self.loadScreenshots()
         }
 
         source.setCancelHandler {
@@ -101,10 +113,49 @@ class ScreenshotStore: ObservableObject {
         directoryMonitor = source
     }
 
+    // MARK: - OCR Backfill
+
+    /// Process existing screenshots that don't have a JSON sidecar yet,
+    /// one at a time so we don't flood the CPU.
+    private func backfillOCR() {
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let self = self else { return }
+
+            DispatchQueue.main.async { self.isBackfilling = true }
+
+            let fm = FileManager.default
+            guard let files = try? fm.contentsOfDirectory(
+                at: self.directory,
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles]
+            ) else {
+                DispatchQueue.main.async { self.isBackfilling = false }
+                return
+            }
+
+            let unprocessed = files
+                .filter { $0.pathExtension.lowercased() == "png" }
+                .filter { !OCRProcessor.hasSidecar(for: $0) }
+
+            // Process serially — one at a time
+            for png in unprocessed {
+                OCRProcessor.processSync(url: png)
+            }
+
+            DispatchQueue.main.async {
+                self.isBackfilling = false
+                self.loadScreenshots()
+            }
+        }
+    }
+
     // MARK: - Single-Item Actions
 
     func deleteScreenshot(_ item: ScreenshotItem) {
         try? FileManager.default.removeItem(at: item.url)
+        // Also remove the JSON sidecar
+        let sidecar = OCRProcessor.sidecarURL(for: item.url)
+        try? FileManager.default.removeItem(at: sidecar)
         screenshots.removeAll { $0.url == item.url }
     }
 
@@ -124,6 +175,8 @@ class ScreenshotStore: ObservableObject {
     func deleteScreenshots(_ items: Set<URL>) {
         for url in items {
             try? FileManager.default.removeItem(at: url)
+            let sidecar = OCRProcessor.sidecarURL(for: url)
+            try? FileManager.default.removeItem(at: sidecar)
         }
         screenshots.removeAll { items.contains($0.url) }
     }

@@ -11,6 +11,11 @@ struct MainWindowView: View {
                     Label("Screenshots", systemImage: "photo.on.rectangle.angled")
                 }
 
+            SearchView()
+                .tabItem {
+                    Label("Search", systemImage: "magnifyingglass")
+                }
+
             SettingsView()
                 .tabItem {
                     Label("Settings", systemImage: "gear")

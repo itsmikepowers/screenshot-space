@@ -108,7 +108,11 @@ enum ScreenshotManager {
         guard let data = pngData else { return }
 
         let filePath = generateFilePath()
-        try? data.write(to: URL(fileURLWithPath: filePath))
+        let fileURL = URL(fileURLWithPath: filePath)
+        try? data.write(to: fileURL)
+
+        // Run OCR on the new screenshot in the background
+        OCRProcessor.process(url: fileURL)
     }
 
     private static func generateFilePath() -> String {
