@@ -40,6 +40,7 @@ struct OnboardingView: View {
 
             if appState.hasPermission {
                 Button("Get Started") {
+                    UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
                     NotificationCenter.default.post(name: .onboardingComplete, object: nil)
                 }
                 .buttonStyle(.borderedProminent)

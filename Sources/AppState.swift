@@ -29,6 +29,14 @@ class AppState: ObservableObject {
         }
     }
 
+    @Published var showInMenuBar: Bool {
+        didSet { UserDefaults.standard.set(showInMenuBar, forKey: "showInMenuBar") }
+    }
+
+    @Published var showInDock: Bool {
+        didSet { UserDefaults.standard.set(showInDock, forKey: "showInDock") }
+    }
+
     @Published var hasPermission: Bool = false
 
     // MARK: - Init
@@ -46,6 +54,18 @@ class AppState: ObservableObject {
             self.isEnabled = defaults.bool(forKey: "isEnabled")
         } else {
             self.isEnabled = true
+        }
+
+        if defaults.object(forKey: "showInMenuBar") != nil {
+            self.showInMenuBar = defaults.bool(forKey: "showInMenuBar")
+        } else {
+            self.showInMenuBar = true
+        }
+
+        if defaults.object(forKey: "showInDock") != nil {
+            self.showInDock = defaults.bool(forKey: "showInDock")
+        } else {
+            self.showInDock = true
         }
 
         self.hasPermission = AXIsProcessTrusted()

@@ -47,6 +47,18 @@ struct SettingsView: View {
                 Text("Screenshots")
             }
 
+            // ── Appearance ──
+            Section {
+                Toggle("Show in Menu Bar", isOn: $appState.showInMenuBar)
+                Toggle("Show in Dock", isOn: $appState.showInDock)
+
+                Text("You can always reopen the app from Spotlight or Finder.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            } header: {
+                Text("Appearance")
+            }
+
             // ── System ──
             Section {
                 Toggle("Launch at Login", isOn: $appState.launchAtLogin)

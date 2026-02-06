@@ -22,7 +22,8 @@ struct MainWindowView: View {
                 .environmentObject(appState)
         }
         .onAppear {
-            if !appState.hasPermission {
+            let hasCompletedOnboarding = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
+            if !appState.hasPermission && !hasCompletedOnboarding {
                 showOnboarding = true
             }
         }

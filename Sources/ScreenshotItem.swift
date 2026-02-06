@@ -101,7 +101,7 @@ class ScreenshotStore: ObservableObject {
         directoryMonitor = source
     }
 
-    // MARK: - Actions
+    // MARK: - Single-Item Actions
 
     func deleteScreenshot(_ item: ScreenshotItem) {
         try? FileManager.default.removeItem(at: item.url)
@@ -117,6 +117,34 @@ class ScreenshotStore: ObservableObject {
 
     func revealInFinder(_ item: ScreenshotItem) {
         NSWorkspace.shared.activateFileViewerSelecting([item.url])
+    }
+
+    // MARK: - Bulk Actions
+
+    func deleteScreenshots(_ items: Set<URL>) {
+        for url in items {
+            try? FileManager.default.removeItem(at: url)
+        }
+        screenshots.removeAll { items.contains($0.url) }
+    }
+
+    func copyToClipboard(_ items: Set<URL>) {
+        let images: [NSImage] = screenshots
+            .filter { items.contains($0.url) }
+            .sorted { $0.date > $1.date }
+            .compactMap { NSImage(contentsOf: $0.url) }
+        guard !images.isEmpty else { return }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.writeObjects(images)
+    }
+
+    func revealInFinder(_ items: Set<URL>) {
+        let urls = screenshots
+            .filter { items.contains($0.url) }
+            .map { $0.url }
+        guard !urls.isEmpty else { return }
+        NSWorkspace.shared.activateFileViewerSelecting(urls)
     }
 
     // MARK: - Thumbnail Generation

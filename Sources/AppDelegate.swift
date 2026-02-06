@@ -7,7 +7,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Properties
 
     private var statusItem: NSStatusItem!
-    private var enableMenuItem: NSMenuItem!
     let appState = AppState()
     private var eventMonitor: EventMonitor?
     private var mainWindow: NSWindow?
@@ -17,7 +16,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupMainWindow()
-        setupStatusItem()
+
+        if appState.showInMenuBar {
+            setupStatusItem()
+        }
+
+        applyDockVisibility(appState.showInDock)
         observeStateChanges()
 
         if appState.checkPermission() && appState.isEnabled {
@@ -66,6 +70,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Status Bar
 
+    /// Tag used to identify dynamic screenshot menu items so we can remove them on refresh.
+    private let recentScreenshotTag = 999
+
     private func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
@@ -79,6 +86,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         menu.delegate = self
 
+        // Static items — recent screenshots are inserted above these dynamically
         let showItem = NSMenuItem(
             title: "Show Screenshot Space",
             action: #selector(showMainWindow),
@@ -86,16 +94,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         )
         showItem.target = self
         menu.addItem(showItem)
-
-        menu.addItem(NSMenuItem.separator())
-
-        enableMenuItem = NSMenuItem(
-            title: appState.isEnabled ? "Disable" : "Enable",
-            action: #selector(toggleEnabled),
-            keyEquivalent: ""
-        )
-        enableMenuItem.target = self
-        menu.addItem(enableMenuItem)
 
         menu.addItem(NSMenuItem.separator())
 
@@ -120,6 +118,140 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.menu = menu
     }
 
+    // MARK: - Recent Screenshots in Menu
+
+    private func refreshRecentScreenshots(in menu: NSMenu) {
+        // Remove old screenshot items
+        menu.items.filter { $0.tag == recentScreenshotTag }.forEach { menu.removeItem($0) }
+
+        let recent = loadRecentScreenshots(count: 5)
+        guard !recent.isEmpty else { return }
+
+        // Insert at the very top: screenshots then a separator
+        var insertIndex = 0
+
+        // Header
+        let header = NSMenuItem()
+        header.tag = recentScreenshotTag
+        header.attributedTitle = NSAttributedString(
+            string: "Recent Screenshots",
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 11, weight: .semibold),
+                .foregroundColor: NSColor.secondaryLabelColor
+            ]
+        )
+        header.isEnabled = false
+        menu.insertItem(header, at: insertIndex)
+        insertIndex += 1
+
+        for (url, thumbnail, name, dateString) in recent {
+            let item = NSMenuItem(
+                title: name,
+                action: #selector(menuScreenshotClicked(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.tag = recentScreenshotTag
+            item.representedObject = url
+
+            // Thumbnail scaled to menu size
+            let scaledThumb = resizeImage(thumbnail, to: NSSize(width: 32, height: 32))
+            item.image = scaledThumb
+
+            // Styled title: name on top, date below
+            let titlePara = NSMutableParagraphStyle()
+            titlePara.lineBreakMode = .byTruncatingMiddle
+
+            let attributed = NSMutableAttributedString()
+            attributed.append(NSAttributedString(
+                string: name + "\n",
+                attributes: [
+                    .font: NSFont.systemFont(ofSize: 12, weight: .medium),
+                    .paragraphStyle: titlePara
+                ]
+            ))
+            attributed.append(NSAttributedString(
+                string: dateString,
+                attributes: [
+                    .font: NSFont.systemFont(ofSize: 10),
+                    .foregroundColor: NSColor.secondaryLabelColor
+                ]
+            ))
+            item.attributedTitle = attributed
+
+            menu.insertItem(item, at: insertIndex)
+            insertIndex += 1
+        }
+
+        let sep = NSMenuItem.separator()
+        sep.tag = recentScreenshotTag
+        menu.insertItem(sep, at: insertIndex)
+    }
+
+    @objc private func menuScreenshotClicked(_ sender: NSMenuItem) {
+        guard let url = sender.representedObject as? URL else { return }
+        guard let image = NSImage(contentsOf: url) else { return }
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.writeObjects([image])
+    }
+
+    private func loadRecentScreenshots(count: Int) -> [(URL, NSImage, String, String)] {
+        let dir = ScreenshotManager.saveDirectory
+        let fm = FileManager.default
+
+        guard let files = try? fm.contentsOfDirectory(
+            at: dir,
+            includingPropertiesForKeys: [.creationDateKey],
+            options: [.skipsHiddenFiles]
+        ) else { return [] }
+
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+
+        return files
+            .filter { $0.pathExtension.lowercased() == "png" }
+            .compactMap { url -> (URL, Date)? in
+                guard let values = try? url.resourceValues(forKeys: [.creationDateKey]),
+                      let date = values.creationDate else { return nil }
+                return (url, date)
+            }
+            .sorted { $0.1 > $1.1 }
+            .prefix(count)
+            .compactMap { (url, date) -> (URL, NSImage, String, String)? in
+                guard let thumb = loadMenuThumbnail(from: url) else { return nil }
+                let name = url.deletingPathExtension().lastPathComponent
+                let dateStr = formatter.string(from: date)
+                return (url, thumb, name, dateStr)
+            }
+    }
+
+    private func loadMenuThumbnail(from url: URL, maxSize: CGFloat = 72) -> NSImage? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        let options: [CFString: Any] = [
+            kCGImageSourceThumbnailMaxPixelSize: maxSize,
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true
+        ]
+        guard let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
+        return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
+    }
+
+    private func resizeImage(_ image: NSImage, to targetSize: NSSize) -> NSImage {
+        let newImage = NSImage(size: targetSize)
+        newImage.lockFocus()
+        NSGraphicsContext.current?.imageInterpolation = .high
+        image.draw(
+            in: NSRect(origin: .zero, size: targetSize),
+            from: NSRect(origin: .zero, size: image.size),
+            operation: .copy,
+            fraction: 1.0
+        )
+        newImage.unlockFocus()
+        return newImage
+    }
+
     // MARK: - State Observation
 
     private func observeStateChanges() {
@@ -141,6 +273,48 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
             .store(in: &cancellables)
+
+        appState.$showInMenuBar
+            .removeDuplicates()
+            .dropFirst()
+            .sink { [weak self] show in
+                guard let self = self else { return }
+                if show {
+                    self.setupStatusItem()
+                } else {
+                    self.removeStatusItem()
+                }
+            }
+            .store(in: &cancellables)
+
+        appState.$showInDock
+            .removeDuplicates()
+            .dropFirst()
+            .sink { [weak self] show in
+                guard let self = self else { return }
+                self.applyDockVisibility(show)
+            }
+            .store(in: &cancellables)
+    }
+
+    // MARK: - Dock Visibility
+
+    private func applyDockVisibility(_ show: Bool) {
+        NSApp.setActivationPolicy(show ? .regular : .accessory)
+        // If hiding from dock, make sure the window stays visible
+        if !show {
+            NSApp.activate(ignoringOtherApps: true)
+            mainWindow?.makeKeyAndOrderFront(nil)
+        }
+    }
+
+    // MARK: - Menu Bar Visibility
+
+    private func removeStatusItem() {
+        if let item = statusItem {
+            NSStatusBar.system.removeStatusItem(item)
+            statusItem = nil
+        }
     }
 
     // MARK: - Event Monitoring
@@ -150,8 +324,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         let monitor = EventMonitor()
         monitor.holdThreshold = appState.holdThreshold
-        monitor.onTap = { ScreenshotManager.captureFullScreen() }
-        monitor.onHold = { ScreenshotManager.captureSelection() }
+        monitor.onTap = { [weak self] in
+            self?.statusItem?.menu?.cancelTracking()
+            ScreenshotManager.captureFullScreen()
+        }
+        monitor.onHold = { [weak self] in
+            self?.statusItem?.menu?.cancelTracking()
+            ScreenshotManager.captureSelection()
+        }
 
         if monitor.start() {
             eventMonitor = monitor
@@ -175,10 +355,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Menu Actions
 
-    @objc private func toggleEnabled() {
-        appState.isEnabled.toggle()
-    }
-
     @objc private func openScreenshotsFolder() {
         ScreenshotManager.revealInFinder()
     }
@@ -193,7 +369,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
 extension AppDelegate: NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
-        enableMenuItem.title = appState.isEnabled ? "Disable" : "Enable"
+        refreshRecentScreenshots(in: menu)
     }
 }
 
