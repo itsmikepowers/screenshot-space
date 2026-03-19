@@ -10,12 +10,13 @@
 VERSION ?= 1.0.0
 SHELL := /bin/bash
 
-.PHONY: build dmg zip release clean help
+.PHONY: build dev dmg zip release clean help
 
 help:
 	@echo "Screenshot Space Build System"
 	@echo ""
 	@echo "Usage:"
+	@echo "  make dev        Start dev mode (auto-rebuild on save)"
 	@echo "  make build      Build and install to /Applications (signed)"
 	@echo "  make dmg        Create distributable DMG"
 	@echo "  make zip        Create distributable ZIP"
@@ -28,6 +29,9 @@ help:
 	@echo "Examples:"
 	@echo "  make dmg VERSION=1.2.0"
 	@echo "  make release VERSION=2.0.0"
+
+dev:
+	@./dev.sh
 
 build:
 	@./build.sh
