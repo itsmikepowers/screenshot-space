@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject var appState: AppState
+    @StateObject private var updater = Updater.shared
 
     var body: some View {
         Form {
@@ -109,6 +110,26 @@ struct SettingsView: View {
             } header: {
                 Text("Permissions")
             }
+            
+            // ── Updates ──
+            Section {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Current Version")
+                        Text(updater.currentVersion)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Spacer()
+                    
+                    updateStatusView
+                }
+                
+                updateActionButton
+            } header: {
+                Text("Updates")
+            }
         }
         .formStyle(.grouped)
         .onAppear {
@@ -154,6 +175,86 @@ struct SettingsView: View {
         }
     }
 
+    @ViewBuilder
+    private var updateStatusView: some View {
+        switch updater.status {
+        case .idle:
+            EmptyView()
+        case .checking:
+            HStack(spacing: 6) {
+                ProgressView()
+                    .scaleEffect(0.7)
+                Text("Checking...")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        case .available(let version):
+            HStack(spacing: 4) {
+                Image(systemName: "arrow.down.circle.fill")
+                    .foregroundColor(.blue)
+                Text("v\(version) available")
+                    .font(.caption)
+                    .foregroundColor(.blue)
+            }
+        case .downloading:
+            HStack(spacing: 6) {
+                ProgressView()
+                    .scaleEffect(0.7)
+                Text("Downloading...")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        case .installing:
+            HStack(spacing: 6) {
+                ProgressView()
+                    .scaleEffect(0.7)
+                Text("Installing...")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        case .upToDate:
+            HStack(spacing: 4) {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundColor(.green)
+                Text("Up to date")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        case .error(let message):
+            HStack(spacing: 4) {
+                Image(systemName: "exclamationmark.circle.fill")
+                    .foregroundColor(.red)
+                Text(message)
+                    .font(.caption)
+                    .foregroundColor(.red)
+                    .lineLimit(1)
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private var updateActionButton: some View {
+        switch updater.status {
+        case .available:
+            Button("Download & Install") {
+                Task {
+                    await updater.downloadAndInstall()
+                }
+            }
+            .buttonStyle(.borderedProminent)
+        case .idle, .upToDate, .error:
+            Button("Check for Updates") {
+                Task {
+                    await updater.checkForUpdates()
+                }
+            }
+            .disabled(updater.status.isLoading)
+        case .checking, .downloading, .installing:
+            Button("Updating...") {}
+                .disabled(true)
+        }
+    }
+    
     @ViewBuilder
     private func permissionStatusRow(
         title: String,
