@@ -7,7 +7,7 @@
 #   make release    - Create both DMG and ZIP
 #   make clean      - Remove build artifacts
 
-VERSION ?= 1.0.6
+VERSION ?= 1.0.7
 SHELL := /bin/bash
 
 .PHONY: build dev dmg zip release clean help

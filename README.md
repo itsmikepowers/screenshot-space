@@ -15,6 +15,11 @@ A lightning-fast macOS screenshot utility that lives in your menu bar. Capture, 
 - **Hold modifier** → Drag to select a region
 - Configurable hotkey — use Option (default), Command, Shift, Control, or any combination
 
+### Region Recapture
+- Define a screen region once (visual selector or manual coordinates)
+- Dedicated hotkey (default: Fn) re-captures that exact region on demand
+- Configurable hotkey — Fn, Shift+Fn, or any modifier combination
+
 ### Smart Organization
 - Screenshots saved to `~/Pictures/ScreenshotSpace/` by default (configurable)
 - Automatic thumbnails and metadata
@@ -42,7 +47,7 @@ curl -fsSL https://raw.githubusercontent.com/itsmikepowers/screenshot-space/main
 
 ### Download DMG
 
-1. Download [ScreenshotSpace-1.0.6.dmg](releases/ScreenshotSpace-1.0.6.dmg)
+1. Download [ScreenshotSpace-1.0.7.dmg](releases/ScreenshotSpace-1.0.7.dmg)
 2. Open the DMG, then **drag Screenshot Space onto the Applications icon**
 3. Eject the disk image, open **Screenshot Space** from Applications (use **Right-click → Open** the first time if macOS warns you)
 4. Grant Accessibility permission when prompted
@@ -80,6 +85,7 @@ This only needs to be done once.
 |--------|--------|
 | Tap `⌥ Option` | Capture entire screen |
 | Hold `⌥ Option` | Drag to select area |
+| Tap `🌐 Fn` | Re-capture defined region |
 | `⌘A` | Select all screenshots |
 | `⌘C` | Copy selected to clipboard |
 | `Delete` | Delete selected |
@@ -97,6 +103,7 @@ Sources/
 ├── AppState.swift          # Settings & permissions
 ├── EventMonitor.swift      # Global hotkey listener
 ├── ScreenshotManager.swift # Capture & save logic
+├── RegionSelector.swift    # Visual region selection overlay
 ├── ScreenshotStore.swift   # Data model & file watching
 ├── OCRProcessor.swift      # Vision text extraction
 ├── MainWindowView.swift    # Tab container
@@ -114,6 +121,8 @@ Sources/
 |---------|-------------|
 | Hold Threshold | Time before drag-select activates (0.1–1.0s) |
 | Hotkey | Choose which modifier keys trigger screenshots (default: Option) |
+| Recapture Region | Define a screen region visually or by coordinates for instant re-capture |
+| Recapture Hotkey | Choose which modifier keys trigger region recapture (default: Fn) |
 | Screenshot Directory | Choose where screenshots are saved (default: `~/Pictures/ScreenshotSpace/`) |
 | Show in Menu Bar | Toggle menu bar icon |
 | Show in Dock | Toggle dock icon |
