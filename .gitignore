@@ -4,3 +4,4 @@ ScreenshotSpace.app/
 ScreenshotSpace.zip
 *.p12
 .DS_Store
+.firecrawl
