@@ -42,7 +42,7 @@ curl -fsSL https://raw.githubusercontent.com/itsmikepowers/screenshot-space/main
 
 ### Download DMG
 
-1. Download [ScreenshotSpace-1.0.4.dmg](releases/ScreenshotSpace-1.0.4.dmg)
+1. Download [ScreenshotSpace-1.0.5.dmg](releases/ScreenshotSpace-1.0.5.dmg)
 2. Open the DMG and drag Screenshot Space to Applications
 3. Right-click the app and select **Open** (required on first launch)
 4. Grant Accessibility permission when prompted
