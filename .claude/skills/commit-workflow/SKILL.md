@@ -121,12 +121,78 @@ Scope identifies the area affected. Check `git log --oneline -30` and reuse exis
 Append `!` after scope: `feat(api)!: change auth token format`
 Include `BREAKING CHANGE:` footer with migration info.
 
-## Step 5: Verify
+## Step 5: Update Documentation
+
+After committing, check whether the change requires updates to project documentation. The scope depends on the commit type — not every commit needs every update.
+
+### README.md
+
+Read `README.md` and check each section against what just changed:
+
+| Commit type | What to check in README |
+|---|---|
+| `feat` | **Features** section (new capability?), **Usage** table (new hotkey/interaction?), **Configuration** table (new setting?), **Architecture** tree (new source file?) |
+| `fix` | Only if user-facing behavior changed (e.g., a workaround in Troubleshooting is no longer needed) |
+| `refactor` | **Architecture** tree only — if source files were added, renamed, or deleted |
+| `build`/`chore` | **Installation** or **Distribution** sections — if build commands, dependencies, or install steps changed |
+| `docs` | By definition — the README is likely the target |
+| `test`/`style`/`perf` | Usually nothing. Skip unless the change is user-visible. |
+
+For the **Architecture tree** specifically: run `ls Sources/` and compare against the tree in README. If any files were added, removed, or renamed, update the tree to match. Each entry should have a brief `# comment` describing the file's role.
+
+If no README sections need updating, skip this — don't touch the README just to touch it.
+
+### Release (Version Bump + DMG Build)
+
+The app has an in-app updater that checks the `releases/` directory on GitHub for new DMG files. For users to receive updates, a new versioned DMG must be committed and pushed. This means every commit that changes app behavior needs a release.
+
+#### When to release
+
+**Release required** — any commit that modifies files in `Sources/`, `Info.plist`, `Package.swift`, or `Assets/`. These change what the app does, so users need the update.
+
+**No release** — changes that only touch documentation or dev tooling. Specifically, skip the release for changes limited to:
+- `README.md`, `docs/`, or any markdown files
+- `.claude/`, `.agents/`, `.blueprint/`
+- `dev.sh`, `Makefile` (dev targets only), `.gitignore`
+- `scripts/` (build scripts don't affect the running app)
+
+If a commit touches both app code and dev-only files, it still needs a release (the app code is what matters).
+
+#### Version number rules
+
+Read the current version from `Info.plist` (`CFBundleShortVersionString`). The format is `MAJOR.MINOR.PATCH`.
+
+| Bump | When | Example |
+|------|------|---------|
+| **MAJOR** (X.0.0) | User explicitly says this is a major release or a huge feature | 1.0.2 → 2.0.0 |
+| **MINOR** (x.Y.0) | User explicitly says this is a significant feature or big update | 1.0.2 → 1.1.0 |
+| **PATCH** (x.y.Z) | **Default for everything else** — bug fixes, small features, tweaks, refactors that change behavior | 1.0.2 → 1.0.3 |
+
+The default is always PATCH. Only bump MAJOR or MINOR if the user explicitly says so. Don't ask — just bump PATCH unless told otherwise.
+
+#### Release steps
+
+After the main commit is verified, perform these steps:
+
+1. **Bump the version** in `Info.plist` — update both `CFBundleVersion` and `CFBundleShortVersionString`
+2. **Update version references** in `README.md` — DMG download links, version badges, any hardcoded version strings (e.g., `ScreenshotSpace-1.0.2.dmg` → `ScreenshotSpace-1.0.3.dmg`)
+3. **Update the `VERSION` default** in `Makefile` (the `VERSION ?= x.y.z` line)
+4. **Build the DMG**: `VERSION={new_version} make dmg`
+5. **Remove the old DMG** from `releases/` and **add the new one**: `git rm releases/ScreenshotSpace-{old}.dmg` then `git add releases/ScreenshotSpace-{new}.dmg`
+6. **Commit everything together**:
+   ```
+   chore(release): bump version to {new_version}
+   ```
+   Stage: `Info.plist`, `README.md`, `Makefile`, `releases/ScreenshotSpace-{new}.dmg`
+
+This keeps the release atomic — one commit has the version bump, the updated README references, and the distributable DMG all together.
+
+## Step 6: Verify
 
 - `git show --stat` — review exactly what was committed (your receipt)
 - `git log --oneline -5` — confirm it appears in history
 
-If multiple atomic commits were planned, repeat Steps 3–5 for each.
+If multiple atomic commits were planned, repeat Steps 3–6 for each.
 
 ## Branching
 
