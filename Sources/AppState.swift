@@ -83,6 +83,23 @@ class AppState: ObservableObject {
         didSet { UserDefaults.standard.set(screenshotDirectory, forKey: "screenshotDirectory") }
     }
 
+    @Published var lastCapturedRegion: CGRect? {
+        didSet {
+            if let r = lastCapturedRegion {
+                UserDefaults.standard.set(
+                    "\(r.origin.x),\(r.origin.y),\(r.size.width),\(r.size.height)",
+                    forKey: "lastCapturedRegion"
+                )
+            } else {
+                UserDefaults.standard.removeObject(forKey: "lastCapturedRegion")
+            }
+        }
+    }
+
+    @Published var recaptureHotkeyModifiers: UInt64 {
+        didSet { UserDefaults.standard.set(Int(recaptureHotkeyModifiers), forKey: "recaptureHotkeyModifiers") }
+    }
+
     @Published private(set) var accessibilityStatus: AccessibilityPermissionStatus
     @Published private(set) var monitorStatus: MonitorStatus = .inactive
     @Published private(set) var systemAccessRefreshID = UUID()
@@ -100,6 +117,13 @@ class AppState: ObservableObject {
 
     var hasPermission: Bool {
         accessibilityStatus.isGranted
+    }
+
+    var hasScreenRecordingPermission: Bool {
+        // Attempt a tiny capture to check if Screen Recording is granted
+        let testRect = CGRect(x: 0, y: 0, width: 1, height: 1)
+        let img = CGWindowListCreateImage(testRect, .optionOnScreenOnly, kCGNullWindowID, .nominalResolution)
+        return img != nil
     }
 
     var hotkeyDisplayString: String {
@@ -120,6 +144,33 @@ class AppState: ObservableObject {
         if flags.contains(.maskAlternate) { parts.append("⌥ Option") }
         if flags.contains(.maskCommand) { parts.append("⌘ Command") }
         return parts.isEmpty ? "None" : parts.joined(separator: " + ")
+    }
+
+    var recaptureHotkeyDisplayString: String {
+        let flags = CGEventFlags(rawValue: recaptureHotkeyModifiers)
+        var parts: [String] = []
+        if flags.contains(.maskSecondaryFn) { parts.append("🌐") }
+        if flags.contains(.maskControl) { parts.append("⌃") }
+        if flags.contains(.maskShift) { parts.append("⇧") }
+        if flags.contains(.maskAlternate) { parts.append("⌥") }
+        if flags.contains(.maskCommand) { parts.append("⌘") }
+        return parts.isEmpty ? "None" : parts.joined(separator: "")
+    }
+
+    var recaptureHotkeyDisplayStringLong: String {
+        let flags = CGEventFlags(rawValue: recaptureHotkeyModifiers)
+        var parts: [String] = []
+        if flags.contains(.maskSecondaryFn) { parts.append("🌐 Fn") }
+        if flags.contains(.maskControl) { parts.append("⌃ Control") }
+        if flags.contains(.maskShift) { parts.append("⇧ Shift") }
+        if flags.contains(.maskAlternate) { parts.append("⌥ Option") }
+        if flags.contains(.maskCommand) { parts.append("⌘ Command") }
+        return parts.isEmpty ? "None" : parts.joined(separator: " + ")
+    }
+
+    var lastCapturedRegionDisplay: String {
+        guard let r = lastCapturedRegion else { return "No region defined" }
+        return "\(Int(r.width))×\(Int(r.height)) at (\(Int(r.origin.x)), \(Int(r.origin.y)))"
     }
 
     var screenshotDirectoryDisplay: String {
@@ -226,6 +277,24 @@ class AppState: ObservableObject {
 
         self.screenshotDirectory = defaults.string(forKey: "screenshotDirectory")
             ?? ScreenshotManager.defaultDirectoryPath
+
+        // Restore recapture region
+        if let regionString = defaults.string(forKey: "lastCapturedRegion") {
+            let parts = regionString.split(separator: ",").compactMap { Double($0) }
+            if parts.count == 4 {
+                self.lastCapturedRegion = CGRect(x: parts[0], y: parts[1], width: parts[2], height: parts[3])
+            } else {
+                self.lastCapturedRegion = nil
+            }
+        } else {
+            self.lastCapturedRegion = nil
+        }
+
+        if defaults.object(forKey: "recaptureHotkeyModifiers") != nil {
+            self.recaptureHotkeyModifiers = UInt64(defaults.integer(forKey: "recaptureHotkeyModifiers"))
+        } else {
+            self.recaptureHotkeyModifiers = CGEventFlags.maskSecondaryFn.rawValue
+        }
 
         self.accessibilityStatus = AXIsProcessTrusted() ? .granted : .missing
         self.hasCompletedOnboarding = defaults.bool(forKey: "hasCompletedOnboarding")

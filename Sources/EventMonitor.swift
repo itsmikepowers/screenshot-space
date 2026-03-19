@@ -15,16 +15,20 @@ class EventMonitor {
 
     var holdThreshold: TimeInterval = 0.25
     var triggerModifiers: CGEventFlags = [.maskAlternate]
+    var recaptureTriggerModifiers: CGEventFlags = []
     var onTap: (() -> Void)?
     var onHold: (() -> Void)?
+    var onRecaptureTap: (() -> Void)?
     var onTapDisabled: (() -> Void)?
 
     // MARK: - Internal State
 
+    private enum ActiveTrigger { case none, primary, recapture }
+
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     private var holdTimer: DispatchSourceTimer?
-    private var optionDown = false
+    private var activeTrigger: ActiveTrigger = .none
     private var holdTriggered = false
     private var isProcessingAction = false
     private var lastEventTime: UInt64 = 0
@@ -76,7 +80,7 @@ class EventMonitor {
         runLoopSource = nil
         
         stateQueue.sync {
-            optionDown = false
+            activeTrigger = .none
             holdTriggered = false
             isProcessingAction = false
         }
@@ -107,13 +111,13 @@ class EventMonitor {
     
     private func handleHoldTimeout() {
         stateQueue.sync {
-            guard optionDown, !holdTriggered, !isProcessingAction else { return }
+            guard activeTrigger == .primary, !holdTriggered, !isProcessingAction else { return }
             holdTriggered = true
             isProcessingAction = true
         }
-        
+
         onHold?()
-        
+
         stateQueue.sync {
             isProcessingAction = false
         }
@@ -152,11 +156,13 @@ class EventMonitor {
         let flags = event.flags
         let eventTime = event.timestamp
 
-        // Check if exactly the configured modifier combination is pressed
-        let allModifiers: CGEventFlags = [.maskCommand, .maskControl, .maskShift, .maskAlternate]
+        // Check which modifier combination is pressed
+        let allModifiers: CGEventFlags = [.maskCommand, .maskControl, .maskShift, .maskAlternate, .maskSecondaryFn]
         let activeModifiers = flags.intersection(allModifiers)
-        let isOptionDown = activeModifiers == triggerModifiers
-        
+
+        let isPrimaryDown = activeModifiers == triggerModifiers
+        let isRecaptureDown = !recaptureTriggerModifiers.isEmpty && activeModifiers == recaptureTriggerModifiers
+
         // Debounce rapid events (within 10ms)
         if eventTime > 0 && lastEventTime > 0 {
             let timeDelta = Double(eventTime - lastEventTime) / 1_000_000_000.0
@@ -166,42 +172,66 @@ class EventMonitor {
         }
         lastEventTime = eventTime
 
-        var shouldTriggerTap = false
+        var shouldTriggerPrimaryTap = false
+        var shouldTriggerRecaptureTap = false
         var shouldStartTimer = false
         let threshold = holdThreshold
-        
+
         stateQueue.sync {
-            // ── Option key DOWN ──
-            if isOptionDown && !self.optionDown {
-                self.optionDown = true
-                self.holdTriggered = false
-                shouldStartTimer = true
+            // ── Modifier DOWN ──
+            if self.activeTrigger == .none {
+                if isPrimaryDown {
+                    self.activeTrigger = .primary
+                    self.holdTriggered = false
+                    shouldStartTimer = true
+                } else if isRecaptureDown {
+                    self.activeTrigger = .recapture
+                }
             }
 
-            // ── Option key UP ──
-            if !isOptionDown && self.optionDown {
-                self.optionDown = false
-                
-                if !self.holdTriggered && !self.isProcessingAction {
-                    shouldTriggerTap = true
+            // ── Modifier UP ──
+            if self.activeTrigger == .primary && !isPrimaryDown {
+                let wasActive = self.activeTrigger
+                self.activeTrigger = .none
+
+                if wasActive == .primary && !self.holdTriggered && !self.isProcessingAction {
+                    shouldTriggerPrimaryTap = true
+                    self.isProcessingAction = true
+                }
+            }
+
+            if self.activeTrigger == .recapture && !isRecaptureDown {
+                self.activeTrigger = .none
+
+                if !self.isProcessingAction {
+                    shouldTriggerRecaptureTap = true
                     self.isProcessingAction = true
                 }
             }
         }
-        
+
         if shouldStartTimer {
             DispatchQueue.main.async { [weak self] in
                 self?.scheduleHoldTimer(threshold: threshold)
             }
-        } else {
+        } else if !isPrimaryDown {
             DispatchQueue.main.async { [weak self] in
                 self?.cancelHoldTimer()
             }
         }
-        
-        if shouldTriggerTap {
+
+        if shouldTriggerPrimaryTap {
             DispatchQueue.main.async { [weak self] in
                 self?.onTap?()
+                self?.stateQueue.sync {
+                    self?.isProcessingAction = false
+                }
+            }
+        }
+
+        if shouldTriggerRecaptureTap {
+            DispatchQueue.main.async { [weak self] in
+                self?.onRecaptureTap?()
                 self?.stateQueue.sync {
                     self?.isProcessingAction = false
                 }

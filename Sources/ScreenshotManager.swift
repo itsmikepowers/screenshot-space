@@ -101,6 +101,76 @@ enum ScreenshotManager {
         )
     }
 
+    /// Capture a specific screen region via CGWindowListCreateImage. Returns PNG data.
+    /// Requires Screen Recording permission.
+    static func captureRegion(_ rect: CGRect) -> Data? {
+        guard let cgImage = CGWindowListCreateImage(
+            rect,
+            .optionOnScreenOnly,
+            kCGNullWindowID,
+            .bestResolution
+        ) else {
+            logger.warning("CGWindowListCreateImage returned nil")
+            return nil
+        }
+        let rep = NSBitmapImageRep(cgImage: cgImage)
+        return rep.representation(using: .png, properties: [:])
+    }
+
+    /// Capture a specific region, save to disk, copy to clipboard, and trigger OCR.
+    static func captureAndSaveRegion(_ rect: CGRect) {
+        captureQueue.sync {
+            guard !isCaptureInProgress else {
+                logger.debug("Capture already in progress, ignoring region recapture")
+                return
+            }
+            isCaptureInProgress = true
+        }
+
+        defer { captureQueue.sync { isCaptureInProgress = false } }
+
+        guard let data = captureRegion(rect) else {
+            logger.warning("Region capture failed — Screen Recording permission may be missing")
+            return
+        }
+
+        let fileURL = generateUniqueFileURL()
+
+        do {
+            try data.write(to: fileURL, options: .atomic)
+            logger.info("Region screenshot saved: \(fileURL.lastPathComponent)")
+
+            // Copy to clipboard
+            let pb = NSPasteboard.general
+            pb.clearContents()
+            pb.setData(data, forType: .png)
+
+            DispatchQueue.global(qos: .utility).async {
+                OCRProcessor.process(url: fileURL)
+            }
+        } catch {
+            logger.error("Failed to save region screenshot: \(error.localizedDescription)")
+        }
+    }
+
+    /// Check whether a CG-coordinate rect is visible on any connected screen.
+    static func isRegionOnScreen(_ rect: CGRect) -> Bool {
+        guard let primaryHeight = NSScreen.screens.first?.frame.height else { return false }
+        for screen in NSScreen.screens {
+            // Convert Cocoa screen frame to CG coordinates (flip Y)
+            let cgScreenRect = CGRect(
+                x: screen.frame.origin.x,
+                y: primaryHeight - screen.frame.maxY,
+                width: screen.frame.width,
+                height: screen.frame.height
+            )
+            if cgScreenRect.intersects(rect) {
+                return true
+            }
+        }
+        return false
+    }
+
     /// Open the screenshot folder in Finder.
     static func revealInFinder() {
         NSWorkspace.shared.open(saveDirectory)

@@ -80,6 +80,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     @objc private func handleScreensChanged() {
         Self.logger.debug("Screen parameters changed")
+        if let rect = appState.lastCapturedRegion, !ScreenshotManager.isRegionOnScreen(rect) {
+            appState.lastCapturedRegion = nil
+            Self.logger.info("Cleared stale capture region after screen change")
+        }
     }
 
     // MARK: - Main Window
@@ -310,6 +314,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
             .store(in: &cancellables)
 
+        appState.$recaptureHotkeyModifiers
+            .removeDuplicates()
+            .dropFirst()
+            .sink { [weak self] rawValue in
+                self?.eventMonitor?.recaptureTriggerModifiers = CGEventFlags(rawValue: rawValue)
+            }
+            .store(in: &cancellables)
+
         appState.$screenshotDirectory
             .removeDuplicates()
             .dropFirst()
@@ -426,6 +438,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         monitor.onHold = { [weak self] in
             self?.statusItem?.menu?.cancelTracking()
             ScreenshotManager.captureSelection()
+        }
+        monitor.recaptureTriggerModifiers = CGEventFlags(rawValue: appState.recaptureHotkeyModifiers)
+        monitor.onRecaptureTap = { [weak self] in
+            guard let self = self, let rect = self.appState.lastCapturedRegion else {
+                NSSound.beep()
+                return
+            }
+            guard ScreenshotManager.isRegionOnScreen(rect) else {
+                self.appState.lastCapturedRegion = nil
+                NSSound.beep()
+                return
+            }
+            self.statusItem?.menu?.cancelTracking()
+            ScreenshotManager.captureAndSaveRegion(rect)
         }
         monitor.onTapDisabled = {
             Self.logger.warning("Event tap was disabled by system, re-enabling...")
