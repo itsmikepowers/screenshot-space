@@ -47,7 +47,7 @@ class ScreenshotStore: ObservableObject {
     @Published var screenshots: [ScreenshotItem] = []
     @Published var isLoading = false
 
-    private let directory = ScreenshotManager.saveDirectory
+    private var directory: URL { ScreenshotManager.saveDirectory }
     private var directoryMonitor: DispatchSourceFileSystemObject?
     private var fileDescriptor: Int32 = -1
     private var isBackfilling = false
@@ -86,6 +86,14 @@ class ScreenshotStore: ObservableObject {
 
     deinit {
         stopWatching()
+    }
+
+    /// Re-initialize for a new screenshot directory.
+    func reloadForNewDirectory() {
+        stopWatching()
+        loadScreenshots()
+        startWatching()
+        backfillOCR()
     }
     
     private func stopWatching() {

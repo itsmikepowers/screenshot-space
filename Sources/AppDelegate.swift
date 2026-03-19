@@ -302,6 +302,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
             .store(in: &cancellables)
 
+        appState.$hotkeyModifiers
+            .removeDuplicates()
+            .dropFirst()
+            .sink { [weak self] rawValue in
+                self?.eventMonitor?.triggerModifiers = CGEventFlags(rawValue: rawValue)
+            }
+            .store(in: &cancellables)
+
+        appState.$screenshotDirectory
+            .removeDuplicates()
+            .dropFirst()
+            .sink { path in
+                ScreenshotManager.updateSaveDirectory(to: path)
+                ScreenshotStore.shared.reloadForNewDirectory()
+            }
+            .store(in: &cancellables)
+
         appState.$isEnabled
             .removeDuplicates()
             .dropFirst()
@@ -401,6 +418,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         let monitor = EventMonitor()
         monitor.holdThreshold = appState.holdThreshold
+        monitor.triggerModifiers = CGEventFlags(rawValue: appState.hotkeyModifiers)
         monitor.onTap = { [weak self] in
             self?.statusItem?.menu?.cancelTracking()
             ScreenshotManager.captureFullScreen()

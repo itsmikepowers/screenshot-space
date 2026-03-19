@@ -21,11 +21,32 @@ struct SettingsView: View {
                     Slider(value: $appState.holdThreshold, in: 0.10...1.0, step: 0.05)
                 }
 
-                Text("Tap Option \u{2192} full-screen screenshot to clipboard\nHold Option \u{2192} drag to select area to clipboard")
+                Text("Tap \(appState.hotkeyDisplayString) \u{2192} full-screen screenshot to clipboard\nHold \(appState.hotkeyDisplayString) \u{2192} drag to select area to clipboard")
                     .font(.caption)
                     .foregroundColor(.secondary)
             } header: {
                 Text("General")
+            }
+
+            // ── Hotkey ──
+            Section {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Current: \(appState.hotkeyDisplayStringLong)")
+                        .foregroundColor(.secondary)
+
+                    HStack(spacing: 12) {
+                        modifierToggle("⌃ Control", flag: .maskControl)
+                        modifierToggle("⇧ Shift", flag: .maskShift)
+                        modifierToggle("⌥ Option", flag: .maskAlternate)
+                        modifierToggle("⌘ Command", flag: .maskCommand)
+                    }
+                }
+
+                Text("Select one or more modifier keys. The screenshot triggers when exactly these keys are pressed together.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            } header: {
+                Text("Hotkey")
             }
 
             // ── Screenshots ──
@@ -33,12 +54,24 @@ struct SettingsView: View {
                 HStack {
                     Image(systemName: "folder.fill")
                         .foregroundColor(.accentColor)
-                    Text("~/Pictures/ScreenshotSpace/")
+                    Text(appState.screenshotDirectoryDisplay)
                         .foregroundColor(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
                     Spacer()
+                    Button("Choose\u{2026}") {
+                        chooseScreenshotDirectory()
+                    }
                     Button("Open in Finder") {
                         ScreenshotManager.revealInFinder()
                     }
+                }
+
+                if appState.screenshotDirectory != ScreenshotManager.defaultDirectoryPath {
+                    Button("Reset to Default") {
+                        appState.screenshotDirectory = ScreenshotManager.defaultDirectoryPath
+                    }
+                    .font(.caption)
                 }
 
                 Text("All screenshots are saved here and copied to your clipboard.")
@@ -209,6 +242,49 @@ struct SettingsView: View {
         }
     }
     
+    // MARK: - Hotkey Helpers
+
+    private func modifierBinding(_ flag: CGEventFlags) -> Binding<Bool> {
+        Binding<Bool>(
+            get: {
+                CGEventFlags(rawValue: appState.hotkeyModifiers).contains(flag)
+            },
+            set: { enabled in
+                var flags = CGEventFlags(rawValue: appState.hotkeyModifiers)
+                if enabled {
+                    flags.insert(flag)
+                } else {
+                    flags.remove(flag)
+                }
+                let relevant: CGEventFlags = [.maskCommand, .maskControl, .maskShift, .maskAlternate]
+                guard !flags.intersection(relevant).isEmpty else { return }
+                appState.hotkeyModifiers = flags.rawValue
+            }
+        )
+    }
+
+    @ViewBuilder
+    private func modifierToggle(_ label: String, flag: CGEventFlags) -> some View {
+        Toggle(label, isOn: modifierBinding(flag))
+            .toggleStyle(.checkbox)
+    }
+
+    // MARK: - Directory Picker
+
+    private func chooseScreenshotDirectory() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = true
+        panel.prompt = "Choose"
+        panel.message = "Select a folder for saving screenshots"
+
+        if panel.runModal() == .OK, let url = panel.url {
+            appState.screenshotDirectory = url.path
+        }
+    }
+
     @ViewBuilder
     private func permissionStatusRow(
         title: String,

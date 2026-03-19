@@ -18,18 +18,32 @@ enum ScreenshotManager {
     private static var isCaptureInProgress = false
     private static let captureQueue = DispatchQueue(label: "com.screenshotspace.capture")
 
-    /// Directory where screenshots are stored.
-    static var saveDirectory: URL = {
-        let dir = FileManager.default.homeDirectoryForCurrentUser
+    /// Default screenshot directory path.
+    static let defaultDirectoryPath: String = {
+        FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Pictures")
             .appendingPathComponent("ScreenshotSpace")
+            .path
+    }()
+
+    /// Directory where screenshots are stored.
+    static var saveDirectory: URL = {
+        let path = UserDefaults.standard.string(forKey: "screenshotDirectory") ?? defaultDirectoryPath
+        let dir = URL(fileURLWithPath: path)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }()
+
+    /// Update the save directory at runtime and ensure it exists.
+    static func updateSaveDirectory(to path: String) {
+        let url = URL(fileURLWithPath: path)
         do {
-            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         } catch {
             logger.error("Failed to create screenshot directory: \(error.localizedDescription)")
         }
-        return dir
-    }()
+        saveDirectory = url
+    }
 
     // Key codes for the number keys
     private static let kVK_ANSI_3: CGKeyCode = 0x14

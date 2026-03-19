@@ -14,6 +14,7 @@ class EventMonitor {
     // MARK: - Configuration
 
     var holdThreshold: TimeInterval = 0.25
+    var triggerModifiers: CGEventFlags = [.maskAlternate]
     var onTap: (() -> Void)?
     var onHold: (() -> Void)?
     var onTapDisabled: (() -> Void)?
@@ -150,12 +151,11 @@ class EventMonitor {
 
         let flags = event.flags
         let eventTime = event.timestamp
-        
-        // Ignore if Option is combined with other modifiers (Cmd, Ctrl, Shift)
-        let otherModifiers: CGEventFlags = [.maskCommand, .maskControl, .maskShift]
-        let hasOtherModifiers = !flags.intersection(otherModifiers).isEmpty
-        
-        let isOptionDown = flags.contains(.maskAlternate) && !hasOtherModifiers
+
+        // Check if exactly the configured modifier combination is pressed
+        let allModifiers: CGEventFlags = [.maskCommand, .maskControl, .maskShift, .maskAlternate]
+        let activeModifiers = flags.intersection(allModifiers)
+        let isOptionDown = activeModifiers == triggerModifiers
         
         // Debounce rapid events (within 10ms)
         if eventTime > 0 && lastEventTime > 0 {

@@ -2,6 +2,7 @@ import Foundation
 import AppKit
 import Combine
 import ServiceManagement
+import CoreGraphics
 
 enum AccessibilityPermissionStatus: Equatable {
     case granted
@@ -74,6 +75,14 @@ class AppState: ObservableObject {
         didSet { UserDefaults.standard.set(showInDock, forKey: "showInDock") }
     }
 
+    @Published var hotkeyModifiers: UInt64 {
+        didSet { UserDefaults.standard.set(Int(hotkeyModifiers), forKey: "hotkeyModifiers") }
+    }
+
+    @Published var screenshotDirectory: String {
+        didSet { UserDefaults.standard.set(screenshotDirectory, forKey: "screenshotDirectory") }
+    }
+
     @Published private(set) var accessibilityStatus: AccessibilityPermissionStatus
     @Published private(set) var monitorStatus: MonitorStatus = .inactive
     @Published private(set) var systemAccessRefreshID = UUID()
@@ -91,6 +100,34 @@ class AppState: ObservableObject {
 
     var hasPermission: Bool {
         accessibilityStatus.isGranted
+    }
+
+    var hotkeyDisplayString: String {
+        let flags = CGEventFlags(rawValue: hotkeyModifiers)
+        var parts: [String] = []
+        if flags.contains(.maskControl) { parts.append("⌃") }
+        if flags.contains(.maskShift) { parts.append("⇧") }
+        if flags.contains(.maskAlternate) { parts.append("⌥") }
+        if flags.contains(.maskCommand) { parts.append("⌘") }
+        return parts.isEmpty ? "None" : parts.joined(separator: "")
+    }
+
+    var hotkeyDisplayStringLong: String {
+        let flags = CGEventFlags(rawValue: hotkeyModifiers)
+        var parts: [String] = []
+        if flags.contains(.maskControl) { parts.append("⌃ Control") }
+        if flags.contains(.maskShift) { parts.append("⇧ Shift") }
+        if flags.contains(.maskAlternate) { parts.append("⌥ Option") }
+        if flags.contains(.maskCommand) { parts.append("⌘ Command") }
+        return parts.isEmpty ? "None" : parts.joined(separator: " + ")
+    }
+
+    var screenshotDirectoryDisplay: String {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        if screenshotDirectory.hasPrefix(home) {
+            return "~" + screenshotDirectory.dropFirst(home.count)
+        }
+        return screenshotDirectory
     }
 
     var shouldShowSetupGuidance: Bool {
@@ -180,6 +217,15 @@ class AppState: ObservableObject {
         } else {
             self.showInDock = true
         }
+
+        if defaults.object(forKey: "hotkeyModifiers") != nil {
+            self.hotkeyModifiers = UInt64(defaults.integer(forKey: "hotkeyModifiers"))
+        } else {
+            self.hotkeyModifiers = CGEventFlags.maskAlternate.rawValue
+        }
+
+        self.screenshotDirectory = defaults.string(forKey: "screenshotDirectory")
+            ?? ScreenshotManager.defaultDirectoryPath
 
         self.accessibilityStatus = AXIsProcessTrusted() ? .granted : .missing
         self.hasCompletedOnboarding = defaults.bool(forKey: "hasCompletedOnboarding")
