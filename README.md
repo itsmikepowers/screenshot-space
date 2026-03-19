@@ -33,6 +33,19 @@ A lightning-fast macOS screenshot utility that lives in your menu bar. Capture, 
 
 ## Installation
 
+### Quick Install (One Command)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/itsmikepowers/screenshot-space/main/scripts/install.sh | bash
+```
+
+### Download Pre-built Release
+
+1. Download the latest `.dmg` or `.zip` from [Releases](https://github.com/itsmikepowers/screenshot-space/releases)
+2. Open the DMG and drag Screenshot Space to Applications
+3. Right-click the app and select **Open** (required on first launch)
+4. Grant Accessibility permission when prompted
+
 ### Build from Source
 
 ```bash
@@ -41,25 +54,22 @@ cd screenshot-space
 ./build.sh
 ```
 
-This is the supported local workflow:
-
-- Build, sign, verify, and install the app to `/Applications/Screenshot Space.app`
-- Grant Accessibility access to that installed app bundle
-- Launch the installed bundle from `/Applications`
-
-Run the installed app:
-
-```bash
-open "/Applications/Screenshot Space.app"
-```
-
-Do not use `.build/release/ScreenshotSpace` as the normal run target for local development. Accessibility permission is much more reliable when macOS sees one stable installed app identity.
+This builds, signs, and installs to `/Applications/Screenshot Space.app`.
 
 ### Requirements
 
 - macOS 13.0 (Ventura) or later
 - Accessibility permission (for global hotkey)
-- A valid code-signing identity visible to `security find-identity -v -p codesigning`
+
+### First Launch Security
+
+Since this app isn't notarized with Apple, macOS will block it on first launch:
+
+1. **Right-click** the app and select **Open**
+2. Click **Open** in the dialog
+3. Or go to **System Settings → Privacy & Security** and click **Open Anyway**
+
+This only needs to be done once.
 
 ---
 
@@ -121,6 +131,32 @@ tccutil reset Accessibility com.screenshotspace.app
 Then rebuild with `./build.sh`, re-open `/Applications/Screenshot Space.app`, and grant Accessibility access to that installed bundle again.
 
 For signing setup details, verification commands, and local certificate guidance, see `docs/SIGNING.md`.
+
+---
+
+## Distribution (For Maintainers)
+
+Create distributable packages for sharing:
+
+```bash
+# Create a DMG installer
+make dmg
+
+# Create a ZIP archive
+make zip
+
+# Create both with a version number
+make release VERSION=1.2.0
+```
+
+Output files are created in `.build/release/`:
+- `ScreenshotSpace-1.2.0.dmg` - Drag-and-drop installer
+- `ScreenshotSpace-1.2.0.zip` - Simple archive
+
+These are ad-hoc signed, meaning:
+- No Apple Developer account required
+- Users must right-click → Open on first launch
+- Works for direct sharing, not Mac App Store
 
 ---
 
