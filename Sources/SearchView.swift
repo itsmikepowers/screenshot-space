@@ -3,7 +3,6 @@ import SwiftUI
 struct SearchView: View {
     @ObservedObject private var store = ScreenshotStore.shared
     @State private var query = ""
-    @State private var previewItem: ScreenshotItem?
     @AppStorage("searchViewMode") private var viewMode: String = "list"
 
     private var mode: ViewMode { ViewMode(rawValue: viewMode) ?? .list }
@@ -72,9 +71,6 @@ struct SearchView: View {
             } else {
                 resultsList
             }
-        }
-        .sheet(item: $previewItem) { item in
-            ScreenshotPreviewView(item: item, store: store)
         }
     }
 
@@ -156,7 +152,7 @@ struct SearchView: View {
         ScreenshotCard(item: item, isSelected: false)
             .contentShape(Rectangle())
             .onTapGesture {
-                previewItem = item
+                ScreenshotPreviewWindowPresenter.present(item: item, store: store)
             }
             .contextMenu {
                 searchContextMenu(for: item)
@@ -167,7 +163,7 @@ struct SearchView: View {
         SearchResultRow(item: item, query: query)
             .contentShape(Rectangle())
             .onTapGesture {
-                previewItem = item
+                ScreenshotPreviewWindowPresenter.present(item: item, store: store)
             }
             .contextMenu {
                 searchContextMenu(for: item)

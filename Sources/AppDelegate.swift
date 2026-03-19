@@ -69,6 +69,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
     
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        return false
+    }
+    
     // MARK: - System Event Handlers
     
     @objc private func handleWakeFromSleep() {

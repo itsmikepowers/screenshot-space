@@ -8,7 +8,6 @@ struct ScreenshotGalleryView: View {
     @ObservedObject private var store = ScreenshotStore.shared
     @State private var selection = Set<URL>()
     @State private var lastClickedID: URL?
-    @State private var previewItem: ScreenshotItem?
     @State private var showDeleteConfirm = false
     @State private var isRenaming = false
     @State private var renamingItem: ScreenshotItem?
@@ -34,9 +33,6 @@ struct ScreenshotGalleryView: View {
             } else {
                 galleryGrid
             }
-        }
-        .sheet(item: $previewItem) { item in
-            ScreenshotPreviewView(item: item, store: store)
         }
         .alert(
             "Delete \(selection.count) Screenshot\(selection.count == 1 ? "" : "s")?",
@@ -171,7 +167,7 @@ struct ScreenshotGalleryView: View {
             lastTapURL = item.url
 
             if isDoubleClick {
-                previewItem = item
+                ScreenshotPreviewWindowPresenter.present(item: item, store: store)
             } else {
                 withAnimation(.easeInOut(duration: 0.15)) {
                     handleClick(item: item, event: NSApp.currentEvent)
@@ -196,7 +192,7 @@ struct ScreenshotGalleryView: View {
                 lastTapURL = item.url
 
                 if isDoubleClick {
-                    previewItem = item
+                    ScreenshotPreviewWindowPresenter.present(item: item, store: store)
                 } else {
                     withAnimation(.easeInOut(duration: 0.15)) {
                         handleClick(item: item, event: NSApp.currentEvent)
@@ -329,7 +325,7 @@ struct ScreenshotGalleryView: View {
         } else {
             // Single-item context menu
             Button("Open Preview") {
-                previewItem = item
+                ScreenshotPreviewWindowPresenter.present(item: item, store: store)
             }
             Divider()
             Button("Copy to Clipboard") {
@@ -576,13 +572,61 @@ class KeyCatcherView: NSView {
     var onEscape: (() -> Void)?
     var onDelete: (() -> Void)?
     var onCopy: (() -> Void)?
+    private var localMonitor: Any?
 
     override var acceptsFirstResponder: Bool { true }
+    
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        
+        // Remove any existing monitor
+        if let monitor = localMonitor {
+            NSEvent.removeMonitor(monitor)
+            localMonitor = nil
+        }
+        
+        // Add a local monitor for key events when we have a window
+        if window != nil {
+            localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                guard let self = self else { return event }
+                
+                // Only handle if our window is key
+                guard self.window?.isKeyWindow == true else { return event }
+                
+                let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+                
+                if (modifiers == .command || modifiers == .control) && event.charactersIgnoringModifiers == "a" {
+                    self.onSelectAll?()
+                    return nil // Consume the event
+                } else if modifiers == .command && event.charactersIgnoringModifiers == "c" {
+                    self.onCopy?()
+                    return nil
+                } else if (modifiers == .command || modifiers == .control) && event.charactersIgnoringModifiers == "q" {
+                    NSApp.terminate(nil)
+                    return nil
+                } else if event.keyCode == 53 { // Escape
+                    self.onEscape?()
+                    return nil
+                } else if event.keyCode == 51 || event.keyCode == 117 { // Backspace or Forward Delete
+                    self.onDelete?()
+                    return nil
+                }
+                
+                return event
+            }
+        }
+    }
+    
+    deinit {
+        if let monitor = localMonitor {
+            NSEvent.removeMonitor(monitor)
+        }
+    }
 
     override func keyDown(with event: NSEvent) {
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
 
-        if modifiers == .command && event.charactersIgnoringModifiers == "a" {
+        if (modifiers == .command || modifiers == .control) && event.charactersIgnoringModifiers == "a" {
             onSelectAll?()
         } else if modifiers == .command && event.charactersIgnoringModifiers == "c" {
             onCopy?()
@@ -601,31 +645,14 @@ class KeyCatcherView: NSView {
 struct ScreenshotPreviewView: View {
     let item: ScreenshotItem
     let store: ScreenshotStore
-    @Environment(\.dismiss) private var dismiss
+    let onClose: () -> Void
     @State private var fullImage: NSImage?
     @State private var showDeleteConfirm = false
 
     var body: some View {
         VStack(spacing: 0) {
-            // Image
-            Group {
-                if let image = fullImage {
-                    Image(nsImage: image)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                } else {
-                    ProgressView()
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color(nsColor: .windowBackgroundColor))
-
-            Divider()
-
-            // Info + Actions
+            // Info + Actions (toolbar at top)
             VStack(spacing: 12) {
-                // Filename and date
                 HStack {
                     Text(item.filename)
                         .font(.headline)
@@ -637,7 +664,6 @@ struct ScreenshotPreviewView: View {
                         .foregroundColor(.secondary)
                 }
 
-                // Action buttons — full width row
                 HStack(spacing: 16) {
                     Button {
                         store.copyToClipboard(item)
@@ -665,18 +691,26 @@ struct ScreenshotPreviewView: View {
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.large)
-
-                    Button {
-                        dismiss()
-                    } label: {
-                        Text("Done")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
                 }
             }
             .padding(16)
+            .background(Color(nsColor: .windowBackgroundColor))
+
+            Divider()
+
+            // Image
+            Group {
+                if let image = fullImage {
+                    Image(nsImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                } else {
+                    ProgressView()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color(nsColor: .windowBackgroundColor))
         }
         .frame(minWidth: 600, idealWidth: 800, minHeight: 450, idealHeight: 600)
         .onAppear {
@@ -691,7 +725,7 @@ struct ScreenshotPreviewView: View {
             Button("Cancel", role: .cancel) {}
             Button("Delete", role: .destructive) {
                 store.deleteScreenshot(item)
-                dismiss()
+                onClose()
             }
         } message: {
             Text("This will permanently delete \"\(item.filename)\" from disk.")

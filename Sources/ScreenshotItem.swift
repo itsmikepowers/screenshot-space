@@ -53,9 +53,10 @@ class ScreenshotStore: ObservableObject {
     private var isBackfilling = false
     private var pendingReload: DispatchWorkItem?
     private let reloadDebounceInterval: TimeInterval = 0.3
+    private var isFirstLoad = true
 
     init() {
-        loadScreenshots()
+        loadScreenshots(streaming: true)
         startWatching()
         backfillOCR()
         observeOCRCompletion()
@@ -91,7 +92,7 @@ class ScreenshotStore: ObservableObject {
     /// Re-initialize for a new screenshot directory.
     func reloadForNewDirectory() {
         stopWatching()
-        loadScreenshots()
+        loadScreenshots(streaming: false)
         startWatching()
         backfillOCR()
     }
@@ -104,9 +105,16 @@ class ScreenshotStore: ObservableObject {
 
     // MARK: - Loading
 
-    func loadScreenshots() {
+    /// Load screenshots from the directory.
+    /// - Parameter streaming: If true, streams items to UI in batches (for first load). If false, loads all at once.
+    func loadScreenshots(streaming: Bool = false) {
+        let shouldStream = streaming && isFirstLoad
+        
         DispatchQueue.main.async { [weak self] in
             self?.isLoading = true
+            if shouldStream {
+                self?.screenshots = []
+            }
         }
         
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
@@ -132,32 +140,80 @@ class ScreenshotStore: ObservableObject {
                 return
             }
 
-            let items: [ScreenshotItem] = files
+            // Get file info and sort by date (newest first) BEFORE loading thumbnails
+            let sortedFiles: [(url: URL, date: Date)] = files
                 .filter { $0.pathExtension.lowercased() == "png" }
-                .compactMap { url -> ScreenshotItem? in
+                .compactMap { url -> (URL, Date)? in
+                    guard let values = try? url.resourceValues(forKeys: [.creationDateKey, .fileSizeKey]),
+                          let date = values.creationDate else {
+                        return nil
+                    }
+                    if let size = values.fileSize, size == 0 {
+                        return nil
+                    }
+                    return (url, date)
+                }
+                .sorted { $0.1 > $1.1 }
+            
+            Self.logger.debug("Found \(sortedFiles.count) screenshots to load (streaming: \(shouldStream))")
+            
+            if shouldStream {
+                // Stream items to UI in batches for first load
+                let batchSize = 12
+                var batch: [ScreenshotItem] = []
+                batch.reserveCapacity(batchSize)
+                
+                for (index, file) in sortedFiles.enumerated() {
                     autoreleasepool {
-                        guard let values = try? url.resourceValues(forKeys: [.creationDateKey, .fileSizeKey]),
-                              let date = values.creationDate else {
-                            Self.logger.debug("Skipping file without creation date: \(url.lastPathComponent)")
-                            return nil
+                        guard let thumbnail = Self.loadThumbnail(from: file.url) else {
+                            Self.logger.debug("Failed to load thumbnail: \(file.url.lastPathComponent)")
+                            return
                         }
                         
-                        if let size = values.fileSize, size == 0 {
-                            Self.logger.debug("Skipping empty file: \(url.lastPathComponent)")
-                            return nil
-                        }
+                        let metadata = OCRProcessor.loadMetadata(for: file.url)
                         
-                        guard let thumbnail = Self.loadThumbnail(from: url) else {
-                            Self.logger.debug("Failed to load thumbnail: \(url.lastPathComponent)")
+                        let item = ScreenshotItem(
+                            url: file.url,
+                            filename: file.url.deletingPathExtension().lastPathComponent,
+                            date: file.date,
+                            thumbnail: thumbnail,
+                            extractedText: metadata?.extractedText,
+                            wordCount: metadata?.wordCount,
+                            isProcessingOCR: metadata == nil
+                        )
+                        batch.append(item)
+                    }
+                    
+                    // Publish batch when full or at end
+                    let isLastItem = index == sortedFiles.count - 1
+                    if batch.count >= batchSize || isLastItem {
+                        let itemsToPublish = batch
+                        batch = []
+                        batch.reserveCapacity(batchSize)
+                        
+                        DispatchQueue.main.async { [weak self] in
+                            self?.screenshots.append(contentsOf: itemsToPublish)
+                        }
+                    }
+                }
+                
+                DispatchQueue.main.async { [weak self] in
+                    self?.isFirstLoad = false
+                    self?.isLoading = false
+                    Self.logger.debug("Finished streaming all screenshots")
+                }
+            } else {
+                // Load all at once for subsequent reloads
+                let items: [ScreenshotItem] = sortedFiles.compactMap { file in
+                    autoreleasepool {
+                        guard let thumbnail = Self.loadThumbnail(from: file.url) else {
                             return nil
                         }
-
-                        let metadata = OCRProcessor.loadMetadata(for: url)
-
+                        let metadata = OCRProcessor.loadMetadata(for: file.url)
                         return ScreenshotItem(
-                            url: url,
-                            filename: url.deletingPathExtension().lastPathComponent,
-                            date: date,
+                            url: file.url,
+                            filename: file.url.deletingPathExtension().lastPathComponent,
+                            date: file.date,
                             thumbnail: thumbnail,
                             extractedText: metadata?.extractedText,
                             wordCount: metadata?.wordCount,
@@ -165,11 +221,12 @@ class ScreenshotStore: ObservableObject {
                         )
                     }
                 }
-                .sorted { $0.date > $1.date }
-
-            DispatchQueue.main.async {
-                self.screenshots = items
-                self.isLoading = false
+                
+                DispatchQueue.main.async { [weak self] in
+                    self?.screenshots = items
+                    self?.isLoading = false
+                    Self.logger.debug("Finished loading all screenshots")
+                }
             }
         }
     }
@@ -206,7 +263,7 @@ class ScreenshotStore: ObservableObject {
         pendingReload?.cancel()
         
         let workItem = DispatchWorkItem { [weak self] in
-            self?.loadScreenshots()
+            self?.loadScreenshots(streaming: false)
         }
         pendingReload = workItem
         
@@ -253,7 +310,7 @@ class ScreenshotStore: ObservableObject {
 
             DispatchQueue.main.async {
                 self.isBackfilling = false
-                self.loadScreenshots()
+                self.loadScreenshots(streaming: false)
             }
         }
     }
