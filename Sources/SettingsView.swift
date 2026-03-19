@@ -107,17 +107,13 @@ struct SettingsView: View {
                     symbolName: appState.accessibilityStatus.symbolName,
                     tint: appState.hasPermission ? .green : .red,
                     status: appState.accessibilityStatus.title,
-                    detail: appState.accessibilityStatus.detail
+                    detail: appState.hasPermission ? nil : appState.accessibilityStatus.detail
                 )
 
                 HStack {
                     if !appState.hasPermission {
                         Button("Grant Access") {
                             appState.requestPermission()
-                        }
-
-                        Button("Open Settings") {
-                            appState.openAccessibilitySettings()
                         }
                     }
 
@@ -291,7 +287,7 @@ struct SettingsView: View {
         symbolName: String,
         tint: Color,
         status: String,
-        detail: String
+        detail: String?
     ) -> some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: symbolName)
@@ -306,9 +302,11 @@ struct SettingsView: View {
                         .foregroundColor(.secondary)
                 }
 
-                Text(detail)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                if let detail, !detail.isEmpty {
+                    Text(detail)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
             }
         }
         .padding(.vertical, 2)

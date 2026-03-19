@@ -45,7 +45,8 @@ class ScreenshotStore: ObservableObject {
     private static let logger = Logger(subsystem: "com.screenshotspace", category: "ScreenshotStore")
 
     @Published var screenshots: [ScreenshotItem] = []
-    @Published var isLoading = false
+    /// True while a directory scan / thumbnail pass is in flight. Starts true so the gallery does not flash “empty” on cold launch.
+    @Published var isLoading = true
 
     private var directory: URL { ScreenshotManager.saveDirectory }
     private var directoryMonitor: DispatchSourceFileSystemObject?

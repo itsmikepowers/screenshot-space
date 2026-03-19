@@ -27,7 +27,9 @@ struct ScreenshotGalleryView: View {
 
     var body: some View {
         Group {
-            if store.screenshots.isEmpty {
+            if store.isLoading && store.screenshots.isEmpty {
+                loadingState
+            } else if store.screenshots.isEmpty {
                 emptyState
             } else {
                 galleryGrid
@@ -59,6 +61,30 @@ struct ScreenshotGalleryView: View {
         } message: {
             Text("Enter a new name for this screenshot.")
         }
+    }
+
+    // MARK: - Loading State
+
+    private var loadingState: some View {
+        VStack(spacing: 16) {
+            Spacer()
+
+            ProgressView()
+                .scaleEffect(1.1)
+                .controlSize(.large)
+
+            Text("Loading…")
+                .font(.title2.bold())
+                .foregroundColor(.secondary)
+
+            Text("Reading your screenshots folder.")
+                .font(.body)
+                .foregroundColor(.secondary.opacity(0.8))
+                .multilineTextAlignment(.center)
+
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     // MARK: - Empty State
@@ -338,8 +364,12 @@ struct ScreenshotGalleryView: View {
                 selection.insert(item.url)
             }
         } else {
-            // Plain click: select only this item
-            selection = [item.url]
+            // Plain click: if this row is already selected, remove it; otherwise select only this item
+            if selection.contains(item.url) {
+                selection.remove(item.url)
+            } else {
+                selection = [item.url]
+            }
         }
     }
 

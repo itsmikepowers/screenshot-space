@@ -62,11 +62,6 @@ struct OnboardingView: View {
                         }
                         .buttonStyle(.borderedProminent)
                         .controlSize(.large)
-
-                        Button("Open Settings") {
-                            appState.openAccessibilitySettings()
-                        }
-                        .controlSize(.large)
                     } else {
                         Button("Check Again") {
                             appState.refreshSystemAccess()
