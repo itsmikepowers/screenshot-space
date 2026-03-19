@@ -39,9 +39,9 @@ A lightning-fast macOS screenshot utility that lives in your menu bar. Capture, 
 curl -fsSL https://raw.githubusercontent.com/itsmikepowers/screenshot-space/main/scripts/install.sh | bash
 ```
 
-### Download Pre-built Release
+### Download DMG
 
-1. Download the latest `.dmg` or `.zip` from [Releases](https://github.com/itsmikepowers/screenshot-space/releases)
+1. Download [ScreenshotSpace-1.0.0.dmg](releases/ScreenshotSpace-1.0.0.dmg)
 2. Open the DMG and drag Screenshot Space to Applications
 3. Right-click the app and select **Open** (required on first launch)
 4. Grant Accessibility permission when prompted
