@@ -42,7 +42,7 @@ curl -fsSL https://raw.githubusercontent.com/itsmikepowers/screenshot-space/main
 
 ### Download DMG
 
-1. Download [ScreenshotSpace-1.0.5.dmg](releases/ScreenshotSpace-1.0.5.dmg)
+1. Download [ScreenshotSpace-1.0.6.dmg](releases/ScreenshotSpace-1.0.6.dmg)
 2. Open the DMG, then **drag Screenshot Space onto the Applications icon**
 3. Eject the disk image, open **Screenshot Space** from Applications (use **Right-click → Open** the first time if macOS warns you)
 4. Grant Accessibility permission when prompted
