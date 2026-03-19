@@ -256,6 +256,35 @@ class ScreenshotStore: ObservableObject {
         NSWorkspace.shared.activateFileViewerSelecting([item.url])
     }
 
+    func renameScreenshot(_ item: ScreenshotItem, to newName: String) -> Bool {
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != item.filename else { return false }
+
+        let fm = FileManager.default
+        let directory = item.url.deletingLastPathComponent()
+        let newURL = directory.appendingPathComponent(trimmed + ".png")
+
+        guard !fm.fileExists(atPath: newURL.path) else {
+            Self.logger.warning("Rename failed: file already exists at \(newURL.lastPathComponent)")
+            return false
+        }
+
+        do {
+            try fm.moveItem(at: item.url, to: newURL)
+
+            let oldSidecar = OCRProcessor.sidecarURL(for: item.url)
+            if fm.fileExists(atPath: oldSidecar.path) {
+                let newSidecar = OCRProcessor.sidecarURL(for: newURL)
+                try fm.moveItem(at: oldSidecar, to: newSidecar)
+            }
+
+            return true
+        } catch {
+            Self.logger.error("Rename failed: \(error.localizedDescription)")
+            return false
+        }
+    }
+
     // MARK: - Bulk Actions
 
     func deleteScreenshots(_ items: Set<URL>) {

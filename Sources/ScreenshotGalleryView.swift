@@ -10,6 +10,9 @@ struct ScreenshotGalleryView: View {
     @State private var lastClickedID: URL?
     @State private var previewItem: ScreenshotItem?
     @State private var showDeleteConfirm = false
+    @State private var isRenaming = false
+    @State private var renamingItem: ScreenshotItem?
+    @State private var renameText = ""
     @State private var lastTapTime = Date.distantPast
     @State private var lastTapURL: URL?
     @AppStorage("galleryViewMode") private var viewMode: String = "grid"
@@ -44,6 +47,17 @@ struct ScreenshotGalleryView: View {
             }
         } message: {
             Text("This will permanently delete the selected screenshot\(selection.count == 1 ? "" : "s") from disk.")
+        }
+        .alert("Rename Screenshot", isPresented: $isRenaming) {
+            TextField("New name", text: $renameText)
+            Button("Cancel", role: .cancel) {}
+            Button("Rename") {
+                if let item = renamingItem {
+                    let _ = store.renameScreenshot(item, to: renameText)
+                }
+            }
+        } message: {
+            Text("Enter a new name for this screenshot.")
         }
     }
 
@@ -185,6 +199,19 @@ struct ScreenshotGalleryView: View {
             Spacer()
 
             if !selection.isEmpty {
+                if selection.count == 1,
+                   let item = store.screenshots.first(where: { selection.contains($0.url) }) {
+                    Button {
+                        renameText = item.filename
+                        renamingItem = item
+                        isRenaming = true
+                    } label: {
+                        Label("Rename", systemImage: "pencil")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Rename screenshot")
+                }
+
                 Button {
                     store.copyToClipboard(selection)
                 } label: {
@@ -284,6 +311,11 @@ struct ScreenshotGalleryView: View {
             }
             Button("Reveal in Finder") {
                 store.revealInFinder(item)
+            }
+            Button("Rename") {
+                renameText = item.filename
+                renamingItem = item
+                isRenaming = true
             }
             Divider()
             Button("Delete", role: .destructive) {
