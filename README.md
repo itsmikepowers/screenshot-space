@@ -41,7 +41,7 @@ curl -fsSL https://raw.githubusercontent.com/itsmikepowers/screenshot-space/main
 
 ### Download DMG
 
-1. Download [ScreenshotSpace-1.0.2.dmg](releases/ScreenshotSpace-1.0.2.dmg)
+1. Download [ScreenshotSpace-1.0.3.dmg](releases/ScreenshotSpace-1.0.3.dmg)
 2. Open the DMG and drag Screenshot Space to Applications
 3. Right-click the app and select **Open** (required on first launch)
 4. Grant Accessibility permission when prompted
@@ -120,7 +120,7 @@ Sources/
 
 ## Troubleshooting
 
-If you grant Accessibility access while the app is already open, return to the app and use `Check Again` in Settings if the listener does not reconnect immediately.
+The app automatically detects when you grant Accessibility permission — no need to click "Check Again". If the hotkey still doesn't work after granting access, try quitting and reopening the app.
 
 If permissions still seem tied to an older build:
 
