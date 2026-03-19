@@ -151,6 +151,9 @@ struct SearchView: View {
     private func searchGridItem(for item: ScreenshotItem) -> some View {
         ScreenshotCard(item: item, isSelected: false)
             .contentShape(Rectangle())
+            .onDrag {
+                FileExportDrag.itemProvider(for: [item.url])
+            }
             .onTapGesture {
                 ScreenshotPreviewWindowPresenter.present(item: item, store: store)
             }
@@ -162,6 +165,9 @@ struct SearchView: View {
     private func searchListItem(for item: ScreenshotItem) -> some View {
         SearchResultRow(item: item, query: query)
             .contentShape(Rectangle())
+            .onDrag {
+                FileExportDrag.itemProvider(for: [item.url])
+            }
             .onTapGesture {
                 ScreenshotPreviewWindowPresenter.present(item: item, store: store)
             }

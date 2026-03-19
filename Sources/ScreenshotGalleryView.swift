@@ -4,6 +4,19 @@ enum ViewMode: String {
     case grid, list
 }
 
+// MARK: - Marquee selection (item bounds in gallery content space)
+
+private struct GalleryItemFramesKey: PreferenceKey {
+    static var defaultValue: [URL: CGRect] { [:] }
+
+    static func reduce(value: inout [URL: CGRect], nextValue: () -> [URL: CGRect]) {
+        let next = nextValue()
+        for (k, v) in next {
+            value[k] = v
+        }
+    }
+}
+
 struct ScreenshotGalleryView: View {
     @ObservedObject private var store = ScreenshotStore.shared
     @State private var selection = Set<URL>()
@@ -15,14 +28,13 @@ struct ScreenshotGalleryView: View {
     @State private var lastTapTime = Date.distantPast
     @State private var lastTapURL: URL?
     @AppStorage("galleryViewMode") private var viewMode: String = "grid"
+    /// Latest layout frames for visible items (lazy views: only on-screen rows/cells report).
+    @State private var itemFrames: [URL: CGRect] = [:]
+    /// Rubber-band rect in `galleryMarquee` space while dragging.
+    @State private var marqueeRect: CGRect?
 
     private var mode: ViewMode { ViewMode(rawValue: viewMode) ?? .grid }
     private let columns = [GridItem(.adaptive(minimum: 200, maximum: 280), spacing: 16)]
-
-    // Convenience: selected items as ScreenshotItems
-    private var selectedItems: [ScreenshotItem] {
-        store.screenshots.filter { selection.contains($0.url) }
-    }
 
     var body: some View {
         Group {
@@ -115,20 +127,38 @@ struct ScreenshotGalleryView: View {
             Divider()
 
             ScrollView {
-                if mode == .grid {
-                    LazyVGrid(columns: columns, spacing: 20) {
-                        ForEach(store.screenshots) { item in
-                            gridItem(for: item)
+                ZStack(alignment: .topLeading) {
+                    Group {
+                        if mode == .grid {
+                            LazyVGrid(columns: columns, spacing: 20) {
+                                ForEach(store.screenshots) { item in
+                                    gridItem(for: item)
+                                        .background(itemFrameReporter(for: item.url))
+                                }
+                            }
+                            .padding(20)
+                        } else {
+                            LazyVStack(spacing: 1) {
+                                ForEach(store.screenshots) { item in
+                                    listRow(for: item)
+                                        .background(itemFrameReporter(for: item.url))
+                                }
+                            }
                         }
                     }
-                    .padding(20)
-                } else {
-                    LazyVStack(spacing: 1) {
-                        ForEach(store.screenshots) { item in
-                            listRow(for: item)
+                    .background {
+                        GeometryReader { geo in
+                            Color.clear
+                                .contentShape(Rectangle())
+                                .frame(width: geo.size.width, height: geo.size.height)
+                                .gesture(marqueeSelectGesture)
                         }
                     }
+
+                    marqueeSelectionOverlay
                 }
+                .coordinateSpace(name: "galleryMarquee")
+                .onPreferenceChange(GalleryItemFramesKey.self) { itemFrames = $0 }
             }
         }
         .background(KeyEventHandler(
@@ -159,6 +189,9 @@ struct ScreenshotGalleryView: View {
             isSelected: selection.contains(item.url)
         )
         .contentShape(Rectangle())
+        .onDrag {
+            FileExportDrag.itemProvider(for: urlsToExport(for: item))
+        }
         .onTapGesture {
             let now = Date()
             let isDoubleClick = (lastTapURL == item.url)
@@ -182,8 +215,14 @@ struct ScreenshotGalleryView: View {
     // MARK: - List Row
 
     private func listRow(for item: ScreenshotItem) -> some View {
-        ScreenshotListRow(item: item, isSelected: selection.contains(item.url))
+        ScreenshotListRow(
+            item: item,
+            isSelected: selection.contains(item.url)
+        )
             .contentShape(Rectangle())
+            .onDrag {
+                FileExportDrag.itemProvider(for: urlsToExport(for: item))
+            }
             .onTapGesture {
                 let now = Date()
                 let isDoubleClick = (lastTapURL == item.url)
@@ -202,6 +241,100 @@ struct ScreenshotGalleryView: View {
             .contextMenu {
                 contextMenuItems(for: item)
             }
+    }
+
+    // MARK: - Marquee selection
+
+    private func itemFrameReporter(for url: URL) -> some View {
+        GeometryReader { geo in
+            Color.clear.preference(
+                key: GalleryItemFramesKey.self,
+                value: [url: geo.frame(in: .named("galleryMarquee"))]
+            )
+        }
+    }
+
+    private var marqueeSelectGesture: some Gesture {
+        DragGesture(minimumDistance: 0, coordinateSpace: .named("galleryMarquee"))
+            .onChanged { value in
+                let dx = value.location.x - value.startLocation.x
+                let dy = value.location.y - value.startLocation.y
+                if (dx * dx + dy * dy) > 16 {
+                    marqueeRect = normalizedMarqueeRect(
+                        start: value.startLocation,
+                        end: value.location
+                    )
+                } else {
+                    marqueeRect = nil
+                }
+            }
+            .onEnded { value in
+                marqueeRect = nil
+                let dx = value.location.x - value.startLocation.x
+                let dy = value.location.y - value.startLocation.y
+                if (dx * dx + dy * dy) <= 16 {
+                    let flags = NSEvent.modifierFlags
+                    if !flags.contains(.command) && !flags.contains(.shift) {
+                        withAnimation(.easeInOut(duration: 0.15)) {
+                            selection.removeAll()
+                        }
+                    }
+                    return
+                }
+                let rect = normalizedMarqueeRect(
+                    start: value.startLocation,
+                    end: value.location
+                )
+                applyMarqueeSelection(rect: rect)
+            }
+    }
+
+    @ViewBuilder
+    private var marqueeSelectionOverlay: some View {
+        if let r = marqueeRect, r.width >= 1, r.height >= 1 {
+            Rectangle()
+                .fill(Color.accentColor.opacity(0.12))
+                .overlay(
+                    Rectangle()
+                        .strokeBorder(Color.accentColor.opacity(0.75), lineWidth: 1)
+                )
+                .frame(width: r.width, height: r.height)
+                .position(x: r.midX, y: r.midY)
+                .allowsHitTesting(false)
+        }
+    }
+
+    private func normalizedMarqueeRect(start: CGPoint, end: CGPoint) -> CGRect {
+        let x = min(start.x, end.x)
+        let y = min(start.y, end.y)
+        let w = max(abs(end.x - start.x), 1)
+        let h = max(abs(end.y - start.y), 1)
+        return CGRect(x: x, y: y, width: w, height: h)
+    }
+
+    private func applyMarqueeSelection(rect: CGRect) {
+        let hits = Set(
+            itemFrames.compactMap { url, frame -> URL? in
+                rect.intersects(frame) ? url : nil
+            }
+        )
+
+        let flags = NSEvent.modifierFlags
+        withAnimation(.easeInOut(duration: 0.15)) {
+            if flags.contains(.command) || flags.contains(.shift) {
+                selection.formUnion(hits)
+            } else {
+                selection = hits
+            }
+        }
+    }
+
+    /// Files to attach when starting a drag from this tile: full selection if it includes this item, otherwise this file only.
+    private func urlsToExport(for item: ScreenshotItem) -> [URL] {
+        if selection.contains(item.url) {
+            return store.screenshots.filter { selection.contains($0.url) }.map(\.url)
+        }
+        return [item.url]
     }
 
     // MARK: - Toolbar
@@ -711,6 +844,10 @@ struct ScreenshotPreviewView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color(nsColor: .windowBackgroundColor))
+            .contentShape(Rectangle())
+            .onDrag {
+                FileExportDrag.itemProvider(for: [item.url])
+            }
         }
         .frame(minWidth: 600, idealWidth: 800, minHeight: 450, idealHeight: 600)
         .onAppear {
