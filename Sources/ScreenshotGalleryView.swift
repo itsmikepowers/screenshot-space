@@ -189,26 +189,29 @@ struct ScreenshotGalleryView: View {
             isSelected: selection.contains(item.url)
         )
         .contentShape(Rectangle())
-        .onDrag {
-            FileExportDrag.itemProvider(for: urlsToExport(for: item))
-        }
-        .onTapGesture {
-            let now = Date()
-            let isDoubleClick = (lastTapURL == item.url)
-                && now.timeIntervalSince(lastTapTime) < 0.35
-            lastTapTime = now
-            lastTapURL = item.url
-
-            if isDoubleClick {
-                ScreenshotPreviewWindowPresenter.present(item: item, store: store)
-            } else {
-                withAnimation(.easeInOut(duration: 0.15)) {
-                    handleClick(item: item, event: NSApp.currentEvent)
-                }
-            }
-        }
         .contextMenu {
             contextMenuItems(for: item)
+        }
+        .overlay {
+            FileDragExportHost(
+                urls: urlsToExport(for: item),
+                onLeftClick: { event in
+                    let now = Date()
+                    let isDoubleClick = (lastTapURL == item.url)
+                        && now.timeIntervalSince(lastTapTime) < 0.35
+                    lastTapTime = now
+                    lastTapURL = item.url
+
+                    if isDoubleClick {
+                        ScreenshotPreviewWindowPresenter.present(item: item, store: store)
+                    } else {
+                        withAnimation(.easeInOut(duration: 0.15)) {
+                            handleClick(item: item, event: event)
+                        }
+                    }
+                }
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
@@ -220,26 +223,29 @@ struct ScreenshotGalleryView: View {
             isSelected: selection.contains(item.url)
         )
             .contentShape(Rectangle())
-            .onDrag {
-                FileExportDrag.itemProvider(for: urlsToExport(for: item))
-            }
-            .onTapGesture {
-                let now = Date()
-                let isDoubleClick = (lastTapURL == item.url)
-                    && now.timeIntervalSince(lastTapTime) < 0.35
-                lastTapTime = now
-                lastTapURL = item.url
-
-                if isDoubleClick {
-                    ScreenshotPreviewWindowPresenter.present(item: item, store: store)
-                } else {
-                    withAnimation(.easeInOut(duration: 0.15)) {
-                        handleClick(item: item, event: NSApp.currentEvent)
-                    }
-                }
-            }
             .contextMenu {
                 contextMenuItems(for: item)
+            }
+            .overlay {
+                FileDragExportHost(
+                    urls: urlsToExport(for: item),
+                    onLeftClick: { event in
+                        let now = Date()
+                        let isDoubleClick = (lastTapURL == item.url)
+                            && now.timeIntervalSince(lastTapTime) < 0.35
+                        lastTapTime = now
+                        lastTapURL = item.url
+
+                        if isDoubleClick {
+                            ScreenshotPreviewWindowPresenter.present(item: item, store: store)
+                        } else {
+                            withAnimation(.easeInOut(duration: 0.15)) {
+                                handleClick(item: item, event: event)
+                            }
+                        }
+                    }
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
     }
 
@@ -845,8 +851,9 @@ struct ScreenshotPreviewView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color(nsColor: .windowBackgroundColor))
             .contentShape(Rectangle())
-            .onDrag {
-                FileExportDrag.itemProvider(for: [item.url])
+            .overlay {
+                FileDragExportHost(urls: [item.url])
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .frame(minWidth: 600, idealWidth: 800, minHeight: 450, idealHeight: 600)
