@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# Build a distributable DMG for Screenshot Space
+# Build a distributable DMG: app + Applications alias (drag to install)
 
 APP_EXECUTABLE="ScreenshotSpace"
 APP_DISPLAY_NAME="Screenshot Space"
@@ -58,24 +58,19 @@ rm -f "${DMG_OUTPUT}"
 TEMP_DMG="${BUILD_DIR}/temp-${DMG_NAME}.dmg"
 rm -f "${TEMP_DMG}"
 
-# Create a temporary staging folder
 STAGING_DIR="${BUILD_DIR}/dmg-staging"
 rm -rf "${STAGING_DIR}"
 mkdir -p "${STAGING_DIR}"
 
-# Copy app to staging
 cp -R "${STAGING_BUNDLE}" "${STAGING_DIR}/"
 
-# Create read-write DMG from staging folder
 hdiutil create -volname "${APP_DISPLAY_NAME}" -srcfolder "${STAGING_DIR}" -ov -format UDRW "${TEMP_DMG}"
 
-# Mount the DMG
 MOUNT_POINT=$(hdiutil attach "${TEMP_DMG}" -readwrite -noverify -noautoopen | grep "/Volumes/" | awk -F'\t' '{print $NF}')
 echo "    Mounted at: ${MOUNT_POINT}"
 
 echo "[5/5] Configuring DMG layout..."
 
-# Create Applications alias using AppleScript (gets proper icon)
 osascript <<EOF
 tell application "Finder"
     set targetFolder to POSIX file "/Applications" as alias
@@ -85,19 +80,16 @@ end tell
 EOF
 echo "    Created Applications alias"
 
-# Set custom icon on the alias
 if [ -f "${FOLDER_ICON}" ]; then
   fileicon set "${MOUNT_POINT}/Applications" "${FOLDER_ICON}" && echo "    Set folder icon"
 fi
 
-# Copy background image
 mkdir -p "${MOUNT_POINT}/.background"
 if [ -f "Assets/dmg-background.png" ]; then
   cp "Assets/dmg-background.png" "${MOUNT_POINT}/.background/background.png"
   echo "    Copied background image"
 fi
 
-# Configure window appearance with AppleScript
 osascript <<EOF
 tell application "Finder"
     tell disk "${APP_DISPLAY_NAME}"
@@ -122,12 +114,10 @@ end tell
 EOF
 echo "    Configured window layout"
 
-# Sync and unmount
 sync
 sleep 2
 hdiutil detach "${MOUNT_POINT}" -quiet
 
-# Convert to compressed format
 hdiutil convert "${TEMP_DMG}" -format UDBZ -o "${DMG_OUTPUT}"
 rm -f "${TEMP_DMG}"
 rm -rf "${STAGING_DIR}"

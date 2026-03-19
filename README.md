@@ -43,8 +43,8 @@ curl -fsSL https://raw.githubusercontent.com/itsmikepowers/screenshot-space/main
 ### Download DMG
 
 1. Download [ScreenshotSpace-1.0.5.dmg](releases/ScreenshotSpace-1.0.5.dmg)
-2. Open the DMG and drag Screenshot Space to Applications
-3. Right-click the app and select **Open** (required on first launch)
+2. Open the DMG, then **drag Screenshot Space onto the Applications icon**
+3. Eject the disk image, open **Screenshot Space** from Applications (use **Right-click → Open** the first time if macOS warns you)
 4. Grant Accessibility permission when prompted
 
 ### Build from Source
@@ -153,7 +153,7 @@ make release VERSION=1.2.0
 ```
 
 Output files are created in `.build/release/`:
-- `ScreenshotSpace-1.2.0.dmg` - Drag-and-drop installer
+- `ScreenshotSpace-1.2.0.dmg` - Drag the app to Applications (standard macOS layout)
 - `ScreenshotSpace-1.2.0.zip` - Simple archive
 
 These are ad-hoc signed, meaning:
