@@ -99,6 +99,13 @@ struct SettingsView: View {
                         appState.refreshSystemAccess()
                     }
                 }
+                
+                if appState.skipAccessibilityCheck && !appState.hasPermission {
+                    Button("Show Setup Guide") {
+                        appState.resetSkipAccessibilityCheck()
+                    }
+                    .font(.caption)
+                }
             } header: {
                 Text("Permissions")
             }

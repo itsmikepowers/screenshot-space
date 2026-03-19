@@ -82,6 +82,10 @@ class AppState: ObservableObject {
         didSet { UserDefaults.standard.set(hasCompletedOnboarding, forKey: "hasCompletedOnboarding") }
     }
 
+    @Published var skipAccessibilityCheck: Bool {
+        didSet { UserDefaults.standard.set(skipAccessibilityCheck, forKey: "skipAccessibilityCheck") }
+    }
+
     private var cancellables = Set<AnyCancellable>()
 
     var hasPermission: Bool {
@@ -89,15 +93,24 @@ class AppState: ObservableObject {
     }
 
     var shouldShowSetupGuidance: Bool {
-        if !hasCompletedOnboarding || !hasPermission {
-            return true
+        if skipAccessibilityCheck {
+            return false
         }
-
-        if case .failedToStart = monitorStatus, isEnabled {
+        
+        if !hasCompletedOnboarding {
             return true
         }
 
         return false
+    }
+    
+    func skipSetup() {
+        skipAccessibilityCheck = true
+        hasCompletedOnboarding = true
+    }
+    
+    func resetSkipAccessibilityCheck() {
+        skipAccessibilityCheck = false
     }
 
     var hotkeyStatusTitle: String {
@@ -169,6 +182,7 @@ class AppState: ObservableObject {
 
         self.accessibilityStatus = AXIsProcessTrusted() ? .granted : .missing
         self.hasCompletedOnboarding = defaults.bool(forKey: "hasCompletedOnboarding")
+        self.skipAccessibilityCheck = defaults.bool(forKey: "skipAccessibilityCheck")
 
         if SMAppService.mainApp.status == .enabled {
             self.launchAtLogin = true

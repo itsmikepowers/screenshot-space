@@ -75,12 +75,11 @@ struct OnboardingView: View {
                         .controlSize(.large)
                     }
 
-                    if appState.hasCompletedOnboarding {
-                        Button("Close") {
-                            dismiss()
-                        }
-                        .controlSize(.large)
+                    Button("Skip") {
+                        appState.skipSetup()
+                        dismiss()
                     }
+                    .controlSize(.large)
                 }
             }
 
