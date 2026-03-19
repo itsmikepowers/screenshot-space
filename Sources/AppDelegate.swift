@@ -1,8 +1,11 @@
 import Cocoa
 import SwiftUI
 import Combine
+import os.log
 
 class AppDelegate: NSObject, NSApplicationDelegate {
+    
+    private static let logger = Logger(subsystem: "com.screenshotspace", category: "AppDelegate")
 
     // MARK: - Properties
 
@@ -11,10 +14,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var eventMonitor: EventMonitor?
     private var mainWindow: NSWindow?
     private var cancellables = Set<AnyCancellable>()
+    private var retryMonitoringWorkItem: DispatchWorkItem?
+    private var monitoringRetryCount = 0
+    private let maxMonitoringRetries = 3
+    
+    private let menuDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter
+    }()
 
     // MARK: - App Lifecycle
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        Self.logger.info("App launched")
+        
         setupMainWindow()
 
         if appState.showInMenuBar {
@@ -34,11 +49,46 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             name: .onboardingComplete,
             object: nil
         )
+        
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleWakeFromSleep),
+            name: NSWorkspace.didWakeNotification,
+            object: nil
+        )
+        
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleScreensChanged),
+            name: NSApplication.didChangeScreenParametersNotification,
+            object: nil
+        )
+    }
+    
+    func applicationWillTerminate(_ notification: Notification) {
+        Self.logger.info("App terminating")
+        stopMonitoring()
+        retryMonitoringWorkItem?.cancel()
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         showMainWindow()
         return true
+    }
+    
+    // MARK: - System Event Handlers
+    
+    @objc private func handleWakeFromSleep() {
+        Self.logger.debug("System woke from sleep")
+        if appState.isEnabled && eventMonitor == nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                self?.startMonitoring()
+            }
+        }
+    }
+    
+    @objc private func handleScreensChanged() {
+        Self.logger.debug("Screen parameters changed")
     }
 
     // MARK: - Main Window
@@ -206,10 +256,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             options: [.skipsHiddenFiles]
         ) else { return [] }
 
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .short
-
         return files
             .filter { $0.pathExtension.lowercased() == "png" }
             .compactMap { url -> (URL, Date)? in
@@ -219,22 +265,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
             .sorted { $0.1 > $1.1 }
             .prefix(count)
-            .compactMap { (url, date) -> (URL, NSImage, String, String)? in
-                guard let thumb = loadMenuThumbnail(from: url) else { return nil }
+            .compactMap { [weak self] (url, date) -> (URL, NSImage, String, String)? in
+                guard let self = self,
+                      let thumb = self.loadMenuThumbnail(from: url) else { return nil }
                 let name = url.deletingPathExtension().lastPathComponent
-                let dateStr = formatter.string(from: date)
+                let dateStr = self.menuDateFormatter.string(from: date)
                 return (url, thumb, name, dateStr)
             }
     }
 
     private func loadMenuThumbnail(from url: URL, maxSize: CGFloat = 72) -> NSImage? {
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
         let options: [CFString: Any] = [
             kCGImageSourceThumbnailMaxPixelSize: maxSize,
             kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceCreateThumbnailWithTransform: true
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCache: false
         ]
-        guard let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, options as CFDictionary),
+              let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+            return nil
+        }
         return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
     }
 
@@ -320,7 +370,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Event Monitoring
 
     func startMonitoring() {
-        guard eventMonitor == nil else { return }
+        guard eventMonitor == nil else {
+            Self.logger.debug("Event monitor already running")
+            return
+        }
+        
+        retryMonitoringWorkItem?.cancel()
 
         let monitor = EventMonitor()
         monitor.holdThreshold = appState.holdThreshold
@@ -335,14 +390,42 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         if monitor.start() {
             eventMonitor = monitor
+            monitoringRetryCount = 0
+            Self.logger.info("Event monitoring started successfully")
         } else {
+            Self.logger.warning("Failed to start event monitoring")
             appState.checkPermission()
+            scheduleMonitoringRetry()
         }
     }
 
     func stopMonitoring() {
+        retryMonitoringWorkItem?.cancel()
+        retryMonitoringWorkItem = nil
         eventMonitor?.stop()
         eventMonitor = nil
+        Self.logger.info("Event monitoring stopped")
+    }
+    
+    private func scheduleMonitoringRetry() {
+        guard monitoringRetryCount < maxMonitoringRetries else {
+            Self.logger.error("Max monitoring retries reached")
+            return
+        }
+        
+        monitoringRetryCount += 1
+        let delay = Double(monitoringRetryCount) * 2.0
+        
+        Self.logger.debug("Scheduling monitoring retry \(self.monitoringRetryCount) in \(delay)s")
+        
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self = self, self.appState.isEnabled, self.eventMonitor == nil else { return }
+            if self.appState.checkPermission() {
+                self.startMonitoring()
+            }
+        }
+        retryMonitoringWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
     }
 
     // MARK: - Notifications

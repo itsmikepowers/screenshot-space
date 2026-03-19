@@ -1,5 +1,9 @@
 import SwiftUI
 
+enum ViewMode: String {
+    case grid, list
+}
+
 struct ScreenshotGalleryView: View {
     @ObservedObject private var store = ScreenshotStore.shared
     @State private var selection = Set<URL>()
@@ -8,7 +12,9 @@ struct ScreenshotGalleryView: View {
     @State private var showDeleteConfirm = false
     @State private var lastTapTime = Date.distantPast
     @State private var lastTapURL: URL?
+    @AppStorage("galleryViewMode") private var viewMode: String = "grid"
 
+    private var mode: ViewMode { ViewMode(rawValue: viewMode) ?? .grid }
     private let columns = [GridItem(.adaptive(minimum: 200, maximum: 280), spacing: 16)]
 
     // Convenience: selected items as ScreenshotItems
@@ -73,34 +79,20 @@ struct ScreenshotGalleryView: View {
             Divider()
 
             ScrollView {
-                LazyVGrid(columns: columns, spacing: 20) {
-                    ForEach(store.screenshots) { item in
-                        ScreenshotCard(
-                            item: item,
-                            isSelected: selection.contains(item.url)
-                        )
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            let now = Date()
-                            let isDoubleClick = (lastTapURL == item.url)
-                                && now.timeIntervalSince(lastTapTime) < 0.35
-                            lastTapTime = now
-                            lastTapURL = item.url
-
-                            if isDoubleClick {
-                                previewItem = item
-                            } else {
-                                withAnimation(.easeInOut(duration: 0.15)) {
-                                    handleClick(item: item, event: NSApp.currentEvent)
-                                }
-                            }
+                if mode == .grid {
+                    LazyVGrid(columns: columns, spacing: 20) {
+                        ForEach(store.screenshots) { item in
+                            gridItem(for: item)
                         }
-                        .contextMenu {
-                            contextMenuItems(for: item)
+                    }
+                    .padding(20)
+                } else {
+                    LazyVStack(spacing: 1) {
+                        ForEach(store.screenshots) { item in
+                            listRow(for: item)
                         }
                     }
                 }
-                .padding(20)
             }
         }
         .background(KeyEventHandler(
@@ -121,6 +113,59 @@ struct ScreenshotGalleryView: View {
                 }
             }
         ))
+    }
+
+    // MARK: - Grid Item
+
+    private func gridItem(for item: ScreenshotItem) -> some View {
+        ScreenshotCard(
+            item: item,
+            isSelected: selection.contains(item.url)
+        )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            let now = Date()
+            let isDoubleClick = (lastTapURL == item.url)
+                && now.timeIntervalSince(lastTapTime) < 0.35
+            lastTapTime = now
+            lastTapURL = item.url
+
+            if isDoubleClick {
+                previewItem = item
+            } else {
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    handleClick(item: item, event: NSApp.currentEvent)
+                }
+            }
+        }
+        .contextMenu {
+            contextMenuItems(for: item)
+        }
+    }
+
+    // MARK: - List Row
+
+    private func listRow(for item: ScreenshotItem) -> some View {
+        ScreenshotListRow(item: item, isSelected: selection.contains(item.url))
+            .contentShape(Rectangle())
+            .onTapGesture {
+                let now = Date()
+                let isDoubleClick = (lastTapURL == item.url)
+                    && now.timeIntervalSince(lastTapTime) < 0.35
+                lastTapTime = now
+                lastTapURL = item.url
+
+                if isDoubleClick {
+                    previewItem = item
+                } else {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        handleClick(item: item, event: NSApp.currentEvent)
+                    }
+                }
+            }
+            .contextMenu {
+                contextMenuItems(for: item)
+            }
     }
 
     // MARK: - Toolbar
@@ -190,6 +235,20 @@ struct ScreenshotGalleryView: View {
                 Label("Open in Finder", systemImage: "folder")
             }
             .buttonStyle(.borderless)
+
+            Divider()
+                .frame(height: 16)
+
+            // View mode toggle
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    viewMode = mode == .grid ? "list" : "grid"
+                }
+            } label: {
+                Image(systemName: mode == .grid ? "list.bullet" : "square.grid.2x2")
+            }
+            .buttonStyle(.borderless)
+            .help(mode == .grid ? "Switch to list view" : "Switch to grid view")
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
@@ -325,6 +384,76 @@ struct ScreenshotCard: View {
             withAnimation(.easeInOut(duration: 0.15)) {
                 isHovering = hovering
             }
+        }
+    }
+}
+
+// MARK: - Screenshot List Row
+
+struct ScreenshotListRow: View {
+    let item: ScreenshotItem
+    let isSelected: Bool
+    @State private var isHovering = false
+
+    var body: some View {
+        HStack(spacing: 14) {
+            // Selection checkmark
+            ZStack {
+                if isSelected {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 18))
+                        .symbolRenderingMode(.palette)
+                        .foregroundStyle(.white, Color.accentColor)
+                        .transition(.scale.combined(with: .opacity))
+                } else {
+                    Circle()
+                        .strokeBorder(Color.secondary.opacity(isHovering ? 0.4 : 0), lineWidth: 1.5)
+                        .frame(width: 18, height: 18)
+                }
+            }
+            .frame(width: 20)
+            .animation(.easeInOut(duration: 0.15), value: isSelected)
+
+            // Thumbnail
+            Image(nsImage: item.thumbnail)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(width: 56, height: 42)
+                .cornerRadius(6)
+                .clipped()
+
+            // Info
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.filename)
+                    .font(.system(size: 13, weight: .medium))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+
+                Text(item.dateString)
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer()
+
+            // Word count
+            if let wc = item.wordCount, wc > 0 {
+                Text("\(wc) words")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary.opacity(0.7))
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 8)
+        .background(
+            isSelected
+                ? Color.accentColor.opacity(0.10)
+                : (isHovering ? Color(nsColor: .controlBackgroundColor) : Color.clear)
+        )
+        .animation(.easeInOut(duration: 0.1), value: isHovering)
+        .animation(.easeInOut(duration: 0.15), value: isSelected)
+        .onHover { hovering in
+            isHovering = hovering
         }
     }
 }

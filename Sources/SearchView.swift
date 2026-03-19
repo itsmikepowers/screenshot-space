@@ -4,6 +4,10 @@ struct SearchView: View {
     @ObservedObject private var store = ScreenshotStore.shared
     @State private var query = ""
     @State private var previewItem: ScreenshotItem?
+    @AppStorage("searchViewMode") private var viewMode: String = "list"
+
+    private var mode: ViewMode { ViewMode(rawValue: viewMode) ?? .list }
+    private let columns = [GridItem(.adaptive(minimum: 200, maximum: 280), spacing: 16)]
 
     private var results: [ScreenshotItem] {
         let trimmed = query.trimmingCharacters(in: .whitespaces)
@@ -41,6 +45,19 @@ struct SearchView: View {
                     }
                     .buttonStyle(.borderless)
                 }
+
+                Divider()
+                    .frame(height: 16)
+
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        viewMode = mode == .grid ? "list" : "grid"
+                    }
+                } label: {
+                    Image(systemName: mode == .grid ? "list.bullet" : "square.grid.2x2")
+                }
+                .buttonStyle(.borderless)
+                .help(mode == .grid ? "Switch to list view" : "Switch to grid view")
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 14)
@@ -117,32 +134,58 @@ struct SearchView: View {
             Divider()
 
             ScrollView {
-                LazyVStack(spacing: 1) {
-                    ForEach(results) { item in
-                        SearchResultRow(
-                            item: item,
-                            query: query
-                        )
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            previewItem = item
+                if mode == .grid {
+                    LazyVGrid(columns: columns, spacing: 20) {
+                        ForEach(results) { item in
+                            searchGridItem(for: item)
                         }
-                        .contextMenu {
-                            Button("Copy to Clipboard") {
-                                store.copyToClipboard(item)
-                            }
-                            Button("Reveal in Finder") {
-                                store.revealInFinder(item)
-                            }
-                            if let text = item.extractedText, !text.isEmpty {
-                                Button("Copy Extracted Text") {
-                                    NSPasteboard.general.clearContents()
-                                    NSPasteboard.general.setString(text, forType: .string)
-                                }
-                            }
+                    }
+                    .padding(20)
+                } else {
+                    LazyVStack(spacing: 1) {
+                        ForEach(results) { item in
+                            searchListItem(for: item)
                         }
                     }
                 }
+            }
+        }
+    }
+
+    private func searchGridItem(for item: ScreenshotItem) -> some View {
+        ScreenshotCard(item: item, isSelected: false)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                previewItem = item
+            }
+            .contextMenu {
+                searchContextMenu(for: item)
+            }
+    }
+
+    private func searchListItem(for item: ScreenshotItem) -> some View {
+        SearchResultRow(item: item, query: query)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                previewItem = item
+            }
+            .contextMenu {
+                searchContextMenu(for: item)
+            }
+    }
+
+    @ViewBuilder
+    private func searchContextMenu(for item: ScreenshotItem) -> some View {
+        Button("Copy to Clipboard") {
+            store.copyToClipboard(item)
+        }
+        Button("Reveal in Finder") {
+            store.revealInFinder(item)
+        }
+        if let text = item.extractedText, !text.isEmpty {
+            Button("Copy Extracted Text") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(text, forType: .string)
             }
         }
     }

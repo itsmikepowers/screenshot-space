@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import os.log
 
 // MARK: - Model
 
@@ -12,11 +13,15 @@ struct ScreenshotItem: Identifiable, Equatable {
     var extractedText: String?
     var wordCount: Int?
 
-    var dateString: String {
+    private static let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
-        return formatter.string(from: date)
+        return formatter
+    }()
+
+    var dateString: String {
+        Self.dateFormatter.string(from: date)
     }
 
     static func == (lhs: ScreenshotItem, rhs: ScreenshotItem) -> Bool {
@@ -29,12 +34,18 @@ struct ScreenshotItem: Identifiable, Equatable {
 class ScreenshotStore: ObservableObject {
     /// Shared instance so Gallery and Search use the same store.
     static let shared = ScreenshotStore()
+    
+    private static let logger = Logger(subsystem: "com.screenshotspace", category: "ScreenshotStore")
 
     @Published var screenshots: [ScreenshotItem] = []
+    @Published var isLoading = false
 
     private let directory = ScreenshotManager.saveDirectory
     private var directoryMonitor: DispatchSourceFileSystemObject?
+    private var fileDescriptor: Int32 = -1
     private var isBackfilling = false
+    private var pendingReload: DispatchWorkItem?
+    private let reloadDebounceInterval: TimeInterval = 0.3
 
     init() {
         loadScreenshots()
@@ -43,47 +54,85 @@ class ScreenshotStore: ObservableObject {
     }
 
     deinit {
+        stopWatching()
+    }
+    
+    private func stopWatching() {
         directoryMonitor?.cancel()
+        directoryMonitor = nil
+        if fileDescriptor >= 0 {
+            close(fileDescriptor)
+            fileDescriptor = -1
+        }
     }
 
     // MARK: - Loading
 
     func loadScreenshots() {
+        DispatchQueue.main.async { [weak self] in
+            self?.isLoading = true
+        }
+        
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
             let fm = FileManager.default
 
-            // Make sure the directory exists
-            try? fm.createDirectory(at: self.directory, withIntermediateDirectories: true)
+            do {
+                try fm.createDirectory(at: self.directory, withIntermediateDirectories: true)
+            } catch {
+                Self.logger.error("Failed to create directory: \(error.localizedDescription)")
+            }
 
-            guard let files = try? fm.contentsOfDirectory(
-                at: self.directory,
-                includingPropertiesForKeys: [.creationDateKey],
-                options: [.skipsHiddenFiles]
-            ) else { return }
+            let files: [URL]
+            do {
+                files = try fm.contentsOfDirectory(
+                    at: self.directory,
+                    includingPropertiesForKeys: [.creationDateKey, .fileSizeKey],
+                    options: [.skipsHiddenFiles]
+                )
+            } catch {
+                Self.logger.error("Failed to list directory: \(error.localizedDescription)")
+                DispatchQueue.main.async { self.isLoading = false }
+                return
+            }
 
-            let items = files
+            let items: [ScreenshotItem] = files
                 .filter { $0.pathExtension.lowercased() == "png" }
                 .compactMap { url -> ScreenshotItem? in
-                    guard let values = try? url.resourceValues(forKeys: [.creationDateKey]),
-                          let date = values.creationDate,
-                          let thumbnail = Self.loadThumbnail(from: url) else { return nil }
+                    autoreleasepool {
+                        guard let values = try? url.resourceValues(forKeys: [.creationDateKey, .fileSizeKey]),
+                              let date = values.creationDate else {
+                            Self.logger.debug("Skipping file without creation date: \(url.lastPathComponent)")
+                            return nil
+                        }
+                        
+                        if let size = values.fileSize, size == 0 {
+                            Self.logger.debug("Skipping empty file: \(url.lastPathComponent)")
+                            return nil
+                        }
+                        
+                        guard let thumbnail = Self.loadThumbnail(from: url) else {
+                            Self.logger.debug("Failed to load thumbnail: \(url.lastPathComponent)")
+                            return nil
+                        }
 
-                    let metadata = OCRProcessor.loadMetadata(for: url)
+                        let metadata = OCRProcessor.loadMetadata(for: url)
 
-                    return ScreenshotItem(
-                        url: url,
-                        filename: url.deletingPathExtension().lastPathComponent,
-                        date: date,
-                        thumbnail: thumbnail,
-                        extractedText: metadata?.extractedText,
-                        wordCount: metadata?.wordCount
-                    )
+                        return ScreenshotItem(
+                            url: url,
+                            filename: url.deletingPathExtension().lastPathComponent,
+                            date: date,
+                            thumbnail: thumbnail,
+                            extractedText: metadata?.extractedText,
+                            wordCount: metadata?.wordCount
+                        )
+                    }
                 }
                 .sorted { $0.date > $1.date }
 
             DispatchQueue.main.async {
                 self.screenshots = items
+                self.isLoading = false
             }
         }
     }
@@ -92,31 +141,48 @@ class ScreenshotStore: ObservableObject {
 
     private func startWatching() {
         let fd = open(directory.path, O_EVTONLY)
-        guard fd >= 0 else { return }
+        guard fd >= 0 else {
+            Self.logger.error("Failed to open directory for watching")
+            return
+        }
+        fileDescriptor = fd
 
         let source = DispatchSource.makeFileSystemObjectSource(
             fileDescriptor: fd,
-            eventMask: .write,
+            eventMask: [.write, .delete, .rename],
             queue: .main
         )
 
         source.setEventHandler { [weak self] in
-            guard let self = self, !self.isBackfilling else { return }
-            self.loadScreenshots()
+            self?.scheduleReload()
         }
 
-        source.setCancelHandler {
-            close(fd)
+        source.setCancelHandler { [weak self] in
+            if let fd = self?.fileDescriptor, fd >= 0 {
+                close(fd)
+                self?.fileDescriptor = -1
+            }
         }
 
         source.resume()
         directoryMonitor = source
     }
+    
+    private func scheduleReload() {
+        guard !isBackfilling else { return }
+        
+        pendingReload?.cancel()
+        
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.loadScreenshots()
+        }
+        pendingReload = workItem
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + reloadDebounceInterval, execute: workItem)
+    }
 
     // MARK: - OCR Backfill
 
-    /// Process existing screenshots that don't have a JSON sidecar yet,
-    /// one at a time so we don't flood the CPU.
     private func backfillOCR() {
         DispatchQueue.global(qos: .utility).async { [weak self] in
             guard let self = self else { return }
@@ -124,11 +190,15 @@ class ScreenshotStore: ObservableObject {
             DispatchQueue.main.async { self.isBackfilling = true }
 
             let fm = FileManager.default
-            guard let files = try? fm.contentsOfDirectory(
-                at: self.directory,
-                includingPropertiesForKeys: nil,
-                options: [.skipsHiddenFiles]
-            ) else {
+            let files: [URL]
+            do {
+                files = try fm.contentsOfDirectory(
+                    at: self.directory,
+                    includingPropertiesForKeys: nil,
+                    options: [.skipsHiddenFiles]
+                )
+            } catch {
+                Self.logger.error("Failed to list directory for OCR backfill: \(error.localizedDescription)")
                 DispatchQueue.main.async { self.isBackfilling = false }
                 return
             }
@@ -136,10 +206,17 @@ class ScreenshotStore: ObservableObject {
             let unprocessed = files
                 .filter { $0.pathExtension.lowercased() == "png" }
                 .filter { !OCRProcessor.hasSidecar(for: $0) }
+            
+            Self.logger.info("OCR backfill: \(unprocessed.count) files to process")
 
-            // Process serially — one at a time
-            for png in unprocessed {
-                OCRProcessor.processSync(url: png)
+            for (index, png) in unprocessed.enumerated() {
+                autoreleasepool {
+                    OCRProcessor.processSync(url: png)
+                }
+                
+                if index > 0 && index % 10 == 0 {
+                    Self.logger.debug("OCR backfill progress: \(index)/\(unprocessed.count)")
+                }
             }
 
             DispatchQueue.main.async {
@@ -152,18 +229,27 @@ class ScreenshotStore: ObservableObject {
     // MARK: - Single-Item Actions
 
     func deleteScreenshot(_ item: ScreenshotItem) {
-        try? FileManager.default.removeItem(at: item.url)
-        // Also remove the JSON sidecar
-        let sidecar = OCRProcessor.sidecarURL(for: item.url)
-        try? FileManager.default.removeItem(at: sidecar)
-        screenshots.removeAll { $0.url == item.url }
+        let fm = FileManager.default
+        do {
+            try fm.removeItem(at: item.url)
+            let sidecar = OCRProcessor.sidecarURL(for: item.url)
+            try? fm.removeItem(at: sidecar)
+            screenshots.removeAll { $0.url == item.url }
+        } catch {
+            Self.logger.error("Failed to delete screenshot: \(error.localizedDescription)")
+        }
     }
 
     func copyToClipboard(_ item: ScreenshotItem) {
-        guard let image = NSImage(contentsOf: item.url) else { return }
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.writeObjects([image])
+        autoreleasepool {
+            guard let image = NSImage(contentsOf: item.url) else {
+                Self.logger.warning("Failed to load image for clipboard: \(item.url.lastPathComponent)")
+                return
+            }
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            pasteboard.writeObjects([image])
+        }
     }
 
     func revealInFinder(_ item: ScreenshotItem) {
@@ -173,23 +259,34 @@ class ScreenshotStore: ObservableObject {
     // MARK: - Bulk Actions
 
     func deleteScreenshots(_ items: Set<URL>) {
+        let fm = FileManager.default
+        var deletedURLs = Set<URL>()
+        
         for url in items {
-            try? FileManager.default.removeItem(at: url)
-            let sidecar = OCRProcessor.sidecarURL(for: url)
-            try? FileManager.default.removeItem(at: sidecar)
+            do {
+                try fm.removeItem(at: url)
+                let sidecar = OCRProcessor.sidecarURL(for: url)
+                try? fm.removeItem(at: sidecar)
+                deletedURLs.insert(url)
+            } catch {
+                Self.logger.error("Failed to delete: \(url.lastPathComponent) - \(error.localizedDescription)")
+            }
         }
-        screenshots.removeAll { items.contains($0.url) }
+        
+        screenshots.removeAll { deletedURLs.contains($0.url) }
     }
 
     func copyToClipboard(_ items: Set<URL>) {
-        let images: [NSImage] = screenshots
-            .filter { items.contains($0.url) }
-            .sorted { $0.date > $1.date }
-            .compactMap { NSImage(contentsOf: $0.url) }
-        guard !images.isEmpty else { return }
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.writeObjects(images)
+        autoreleasepool {
+            let images: [NSImage] = screenshots
+                .filter { items.contains($0.url) }
+                .sorted { $0.date > $1.date }
+                .compactMap { NSImage(contentsOf: $0.url) }
+            guard !images.isEmpty else { return }
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            pasteboard.writeObjects(images)
+        }
     }
 
     func revealInFinder(_ items: Set<URL>) {
@@ -208,7 +305,8 @@ class ScreenshotStore: ObservableObject {
         let options: [CFString: Any] = [
             kCGImageSourceThumbnailMaxPixelSize: maxSize,
             kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceCreateThumbnailWithTransform: true
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCache: false
         ]
 
         guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
