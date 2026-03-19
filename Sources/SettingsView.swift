@@ -77,14 +77,6 @@ struct SettingsView: View {
                     detail: appState.accessibilityStatus.detail
                 )
 
-                permissionStatusRow(
-                    title: "Hotkey Listener",
-                    symbolName: hotkeySymbolName,
-                    tint: hotkeyTintColor,
-                    status: appState.hotkeyStatusTitle,
-                    detail: appState.hotkeyStatusDetail
-                )
-
                 HStack {
                     if !appState.hasPermission {
                         Button("Grant Access") {
@@ -134,44 +126,6 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .onAppear {
             appState.refreshSystemAccess()
-        }
-    }
-
-    private var hotkeySymbolName: String {
-        if !appState.isEnabled {
-            return "pause.circle.fill"
-        }
-
-        if !appState.hasPermission {
-            return "lock.slash.fill"
-        }
-
-        switch appState.monitorStatus {
-        case .active:
-            return "bolt.circle.fill"
-        case .inactive:
-            return "minus.circle.fill"
-        case .failedToStart:
-            return "xmark.octagon.fill"
-        }
-    }
-
-    private var hotkeyTintColor: Color {
-        if !appState.isEnabled {
-            return .secondary
-        }
-
-        if !appState.hasPermission {
-            return .orange
-        }
-
-        switch appState.monitorStatus {
-        case .active:
-            return .green
-        case .inactive:
-            return .orange
-        case .failedToStart:
-            return .red
         }
     }
 
