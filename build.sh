@@ -6,7 +6,7 @@ APP_DISPLAY_NAME="Screenshot Space"
 BUILD_DIR=".build/release"
 STAGING_BUNDLE="${BUILD_DIR}/${APP_DISPLAY_NAME}.app"
 INSTALL_PATH="/Applications/${APP_DISPLAY_NAME}.app"
-SIGN_IDENTITY="${SIGN_IDENTITY:-ScreenshotSpace Developer}"
+SIGN_IDENTITY="${SIGN_IDENTITY:-Developer ID Application: Michael Powers (83955LP5FK)}"
 ICON_SOURCE="Assets/AppIcon.icns"
 
 require_command() {
