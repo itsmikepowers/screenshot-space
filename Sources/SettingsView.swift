@@ -68,29 +68,35 @@ struct SettingsView: View {
 
             // ── Permissions ──
             Section {
+                permissionStatusRow(
+                    title: "Accessibility Access",
+                    symbolName: appState.accessibilityStatus.symbolName,
+                    tint: appState.hasPermission ? .green : .red,
+                    status: appState.accessibilityStatus.title,
+                    detail: appState.accessibilityStatus.detail
+                )
+
+                permissionStatusRow(
+                    title: "Hotkey Listener",
+                    symbolName: hotkeySymbolName,
+                    tint: hotkeyTintColor,
+                    status: appState.hotkeyStatusTitle,
+                    detail: appState.hotkeyStatusDetail
+                )
+
                 HStack {
-                    Image(systemName: appState.hasPermission
-                          ? "checkmark.circle.fill"
-                          : "xmark.circle.fill")
-                        .foregroundColor(appState.hasPermission ? .green : .red)
-
-                    Text("Accessibility")
-
-                    Spacer()
-
                     if !appState.hasPermission {
                         Button("Grant Access") {
                             appState.requestPermission()
                         }
-                    } else {
-                        Text("Granted")
-                            .foregroundColor(.secondary)
-                    }
-                }
 
-                if !appState.hasPermission {
+                        Button("Open Settings") {
+                            appState.openAccessibilitySettings()
+                        }
+                    }
+
                     Button("Check Again") {
-                        appState.checkPermission()
+                        appState.refreshSystemAccess()
                     }
                 }
             } header: {
@@ -99,7 +105,74 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .onAppear {
-            appState.checkPermission()
+            appState.refreshSystemAccess()
         }
+    }
+
+    private var hotkeySymbolName: String {
+        if !appState.isEnabled {
+            return "pause.circle.fill"
+        }
+
+        if !appState.hasPermission {
+            return "lock.slash.fill"
+        }
+
+        switch appState.monitorStatus {
+        case .active:
+            return "bolt.circle.fill"
+        case .inactive:
+            return "minus.circle.fill"
+        case .failedToStart:
+            return "xmark.octagon.fill"
+        }
+    }
+
+    private var hotkeyTintColor: Color {
+        if !appState.isEnabled {
+            return .secondary
+        }
+
+        if !appState.hasPermission {
+            return .orange
+        }
+
+        switch appState.monitorStatus {
+        case .active:
+            return .green
+        case .inactive:
+            return .orange
+        case .failedToStart:
+            return .red
+        }
+    }
+
+    @ViewBuilder
+    private func permissionStatusRow(
+        title: String,
+        symbolName: String,
+        tint: Color,
+        status: String,
+        detail: String
+    ) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: symbolName)
+                .foregroundColor(tint)
+                .frame(width: 18, height: 18)
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text(title)
+                    Spacer()
+                    Text(status)
+                        .foregroundColor(.secondary)
+                }
+
+                Text(detail)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding(.vertical, 2)
     }
 }

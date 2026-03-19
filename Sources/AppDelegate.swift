@@ -16,7 +16,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var cancellables = Set<AnyCancellable>()
     private var retryMonitoringWorkItem: DispatchWorkItem?
     private var monitoringRetryCount = 0
-    private let maxMonitoringRetries = 3
+    private let shortRetryLimit = 3
+    private let recoveryRetryDelay: TimeInterval = 15.0
     
     private let menuDateFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -38,17 +39,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         applyDockVisibility(appState.showInDock)
         observeStateChanges()
-
-        if appState.checkPermission() && appState.isEnabled {
-            startMonitoring()
-        }
-
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(onboardingComplete),
-            name: .onboardingComplete,
-            object: nil
-        )
+        _ = appState.refreshSystemAccess()
         
         NotificationCenter.default.addObserver(
             self,
@@ -80,10 +71,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     @objc private func handleWakeFromSleep() {
         Self.logger.debug("System woke from sleep")
-        if appState.isEnabled && eventMonitor == nil {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-                self?.startMonitoring()
-            }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            _ = self?.appState.refreshSystemAccess()
         }
     }
     
@@ -314,13 +303,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         appState.$isEnabled
             .removeDuplicates()
             .dropFirst()
-            .sink { [weak self] enabled in
-                guard let self = self else { return }
-                if enabled {
-                    self.startMonitoring()
-                } else {
-                    self.stopMonitoring()
-                }
+            .sink { [weak self] _ in
+                self?.reconcileMonitoring(reason: "enabled state changed")
+            }
+            .store(in: &cancellables)
+
+        appState.$systemAccessRefreshID
+            .dropFirst()
+            .sink { [weak self] _ in
+                self?.reconcileMonitoring(reason: "system access refreshed")
             }
             .store(in: &cancellables)
 
@@ -369,13 +360,42 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Event Monitoring
 
-    func startMonitoring() {
-        guard eventMonitor == nil else {
-            Self.logger.debug("Event monitor already running")
+    private func reconcileMonitoring(reason: String) {
+        Self.logger.debug("Reconciling monitoring: \(reason, privacy: .public)")
+
+        guard appState.isEnabled else {
+            cancelMonitoringRetry()
+            stopMonitoring()
+            monitoringRetryCount = 0
+            appState.updateMonitorStatus(.inactive)
             return
         }
-        
-        retryMonitoringWorkItem?.cancel()
+
+        guard appState.hasPermission else {
+            stopMonitoring()
+            appState.updateMonitorStatus(.inactive)
+            scheduleMonitoringRetry()
+            return
+        }
+
+        guard eventMonitor == nil else {
+            cancelMonitoringRetry()
+            monitoringRetryCount = 0
+            appState.updateMonitorStatus(.active)
+            return
+        }
+
+        startMonitoring()
+    }
+
+    private func startMonitoring() {
+        guard eventMonitor == nil else {
+            Self.logger.debug("Event monitor already running")
+            appState.updateMonitorStatus(.active)
+            return
+        }
+
+        cancelMonitoringRetry()
 
         let monitor = EventMonitor()
         monitor.holdThreshold = appState.holdThreshold
@@ -388,52 +408,56 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             ScreenshotManager.captureSelection()
         }
 
-        if monitor.start() {
+        switch monitor.start() {
+        case .started, .alreadyRunning:
             eventMonitor = monitor
             monitoringRetryCount = 0
+            appState.updateMonitorStatus(.active)
             Self.logger.info("Event monitoring started successfully")
-        } else {
-            Self.logger.warning("Failed to start event monitoring")
-            appState.checkPermission()
+        case .permissionDenied:
+            Self.logger.warning("Event monitoring blocked by missing Accessibility permission")
+            appState.applyAccessibilityTrust(false)
+            appState.updateMonitorStatus(.inactive)
+            scheduleMonitoringRetry()
+        case .failedToCreateTap:
+            let message = "macOS could not start the global hotkey listener. Keep the app installed in /Applications, then click Check Again."
+            Self.logger.error("Failed to create event tap")
+            appState.updateMonitorStatus(.failedToStart(message))
             scheduleMonitoringRetry()
         }
     }
 
-    func stopMonitoring() {
-        retryMonitoringWorkItem?.cancel()
-        retryMonitoringWorkItem = nil
+    private func stopMonitoring() {
         eventMonitor?.stop()
         eventMonitor = nil
         Self.logger.info("Event monitoring stopped")
     }
     
     private func scheduleMonitoringRetry() {
-        guard monitoringRetryCount < maxMonitoringRetries else {
-            Self.logger.error("Max monitoring retries reached")
+        guard appState.isEnabled, eventMonitor == nil else {
             return
         }
-        
+
+        cancelMonitoringRetry()
         monitoringRetryCount += 1
-        let delay = Double(monitoringRetryCount) * 2.0
-        
+        let delay = monitoringRetryCount <= shortRetryLimit
+            ? Double(monitoringRetryCount) * 2.0
+            : recoveryRetryDelay
+
         Self.logger.debug("Scheduling monitoring retry \(self.monitoringRetryCount) in \(delay)s")
-        
+
         let workItem = DispatchWorkItem { [weak self] in
             guard let self = self, self.appState.isEnabled, self.eventMonitor == nil else { return }
-            if self.appState.checkPermission() {
-                self.startMonitoring()
-            }
+            self.retryMonitoringWorkItem = nil
+            _ = self.appState.refreshSystemAccess()
         }
         retryMonitoringWorkItem = workItem
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
     }
 
-    // MARK: - Notifications
-
-    @objc private func onboardingComplete() {
-        if appState.isEnabled {
-            startMonitoring()
-        }
+    private func cancelMonitoringRetry() {
+        retryMonitoringWorkItem?.cancel()
+        retryMonitoringWorkItem = nil
     }
 
     // MARK: - Menu Actions
@@ -443,6 +467,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func quitApp() {
+        cancelMonitoringRetry()
         stopMonitoring()
         NSApp.terminate(nil)
     }
@@ -454,10 +479,4 @@ extension AppDelegate: NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
         refreshRecentScreenshots(in: menu)
     }
-}
-
-// MARK: - Notifications
-
-extension Notification.Name {
-    static let onboardingComplete = Notification.Name("screenshotspace.onboardingComplete")
 }

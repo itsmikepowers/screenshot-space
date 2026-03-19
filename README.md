@@ -38,19 +38,28 @@ A lightning-fast macOS screenshot utility that lives in your menu bar. Capture, 
 ```bash
 git clone https://github.com/itsmikepowers/screenshot-space.git
 cd screenshot-space
-swift build -c release
+./build.sh
 ```
 
-Run the app:
+This is the supported local workflow:
+
+- Build, sign, verify, and install the app to `/Applications/Screenshot Space.app`
+- Grant Accessibility access to that installed app bundle
+- Launch the installed bundle from `/Applications`
+
+Run the installed app:
 
 ```bash
-.build/release/ScreenshotSpace
+open "/Applications/Screenshot Space.app"
 ```
+
+Do not use `.build/release/ScreenshotSpace` as the normal run target for local development. Accessibility permission is much more reliable when macOS sees one stable installed app identity.
 
 ### Requirements
 
 - macOS 13.0 (Ventura) or later
 - Accessibility permission (for global hotkey)
+- A valid code-signing identity visible to `security find-identity -v -p codesigning`
 
 ---
 
@@ -96,6 +105,22 @@ Sources/
 | Show in Menu Bar | Toggle menu bar icon |
 | Show in Dock | Toggle dock icon |
 | Launch at Login | Start with macOS |
+
+---
+
+## Troubleshooting
+
+If you grant Accessibility access while the app is already open, return to the app and use `Check Again` in Settings if the listener does not reconnect immediately.
+
+If permissions still seem tied to an older build:
+
+```bash
+tccutil reset Accessibility com.screenshotspace.app
+```
+
+Then rebuild with `./build.sh`, re-open `/Applications/Screenshot Space.app`, and grant Accessibility access to that installed bundle again.
+
+For signing setup details, verification commands, and local certificate guidance, see `docs/SIGNING.md`.
 
 ---
 

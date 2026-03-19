@@ -2,8 +2,7 @@ import SwiftUI
 
 struct OnboardingView: View {
     @EnvironmentObject var appState: AppState
-    @State private var permissionTimer: Timer?
-    @State private var didRequestPermission = false
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         VStack(spacing: 20) {
@@ -24,59 +23,64 @@ struct OnboardingView: View {
             Divider()
                 .padding(.horizontal, 40)
 
-            // ── Permission Status ──
-            HStack(spacing: 8) {
-                Image(systemName: appState.hasPermission
-                      ? "checkmark.circle.fill"
-                      : "exclamationmark.triangle.fill")
-                    .foregroundColor(appState.hasPermission ? .green : .orange)
-                    .font(.title3)
+            VStack(spacing: 12) {
+                onboardingStatusCard(
+                    title: "Accessibility Access",
+                    symbolName: appState.accessibilityStatus.symbolName,
+                    tint: appState.hasPermission ? .green : .orange,
+                    status: appState.accessibilityStatus.title,
+                    detail: appState.accessibilityStatus.detail
+                )
 
-                Text(appState.hasPermission
-                     ? "Permission Granted"
-                     : "Accessibility Permission Required")
-                    .font(.headline)
+                onboardingStatusCard(
+                    title: "Hotkey Listener",
+                    symbolName: hotkeySymbolName,
+                    tint: hotkeyTintColor,
+                    status: appState.hotkeyStatusTitle,
+                    detail: appState.hotkeyStatusDetail
+                )
             }
 
-            if appState.hasPermission {
-                Button("Get Started") {
-                    UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
-                    NotificationCenter.default.post(name: .onboardingComplete, object: nil)
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-            } else if !didRequestPermission {
-                Text("Screenshot Space needs Accessibility access to\ndetect the Option key and trigger screenshots.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
+            Text(onboardingMessage)
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 320)
 
-                Button("Grant Permission") {
-                    appState.requestPermission()
-                    didRequestPermission = true
+            if appState.hasPermission && appState.monitorStatus.isActive {
+                Button(appState.hasCompletedOnboarding ? "Done" : "Get Started") {
+                    appState.completeOnboarding()
+                    dismiss()
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
             } else {
-                Text("Toggle ScreenshotSpace ON in System Settings,\nthen come back and click Continue.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-
                 HStack(spacing: 12) {
-                    Button("Continue") {
-                        appState.checkPermission()
-                        if appState.hasPermission {
-                            NotificationCenter.default.post(name: .onboardingComplete, object: nil)
+                    if !appState.hasPermission {
+                        Button("Grant Access") {
+                            appState.requestPermission()
                         }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
 
-                    Button("Open Settings") {
-                        appState.openAccessibilitySettings()
+                        Button("Open Settings") {
+                            appState.openAccessibilitySettings()
+                        }
+                        .controlSize(.large)
+                    } else {
+                        Button("Check Again") {
+                            appState.refreshSystemAccess()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
                     }
-                    .controlSize(.large)
+
+                    if appState.hasCompletedOnboarding {
+                        Button("Close") {
+                            dismiss()
+                        }
+                        .controlSize(.large)
+                    }
                 }
             }
 
@@ -84,22 +88,91 @@ struct OnboardingView: View {
         }
         .padding(30)
         .frame(minWidth: 440, idealWidth: 440, minHeight: 360, idealHeight: 360)
-        .onAppear { startPolling() }
-        .onDisappear { stopPolling() }
-    }
-
-    // MARK: - Permission Polling
-
-    private func startPolling() {
-        permissionTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
-            if appState.checkPermission() {
-                stopPolling()
-            }
+        .onAppear {
+            appState.refreshSystemAccess()
         }
     }
 
-    private func stopPolling() {
-        permissionTimer?.invalidate()
-        permissionTimer = nil
+    private var onboardingMessage: String {
+        if !appState.hasPermission {
+            return "Screenshot Space needs Accessibility access to detect the Option key and trigger screenshots. Grant access in System Settings, then return here."
+        }
+
+        if appState.monitorStatus.isActive {
+            return "Accessibility is granted and the global Option key listener is ready to capture."
+        }
+
+        return "Accessibility is granted, but the hotkey listener is not ready yet. Check Again to reconnect it without relaunching the app."
+    }
+
+    private var hotkeySymbolName: String {
+        if !appState.isEnabled {
+            return "pause.circle.fill"
+        }
+
+        if !appState.hasPermission {
+            return "lock.slash.fill"
+        }
+
+        switch appState.monitorStatus {
+        case .active:
+            return "bolt.circle.fill"
+        case .inactive:
+            return "minus.circle.fill"
+        case .failedToStart:
+            return "xmark.octagon.fill"
+        }
+    }
+
+    private var hotkeyTintColor: Color {
+        if !appState.isEnabled {
+            return .secondary
+        }
+
+        if !appState.hasPermission {
+            return .orange
+        }
+
+        switch appState.monitorStatus {
+        case .active:
+            return .green
+        case .inactive:
+            return .orange
+        case .failedToStart:
+            return .red
+        }
+    }
+
+    @ViewBuilder
+    private func onboardingStatusCard(
+        title: String,
+        symbolName: String,
+        tint: Color,
+        status: String,
+        detail: String
+    ) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: symbolName)
+                .foregroundColor(tint)
+                .frame(width: 20, height: 20)
+                .font(.title3)
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text(title)
+                        .font(.headline)
+                    Spacer()
+                    Text(status)
+                        .foregroundColor(.secondary)
+                }
+
+                Text(detail)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding(14)
+        .background(Color.secondary.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 }

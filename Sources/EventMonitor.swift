@@ -4,6 +4,13 @@ import Cocoa
 /// Calls `onTap` for a quick tap and `onHold` when held past the threshold.
 class EventMonitor {
 
+    enum StartResult: Equatable {
+        case started
+        case alreadyRunning
+        case permissionDenied
+        case failedToCreateTap
+    }
+
     // MARK: - Configuration
 
     var holdThreshold: TimeInterval = 0.25
@@ -24,10 +31,14 @@ class EventMonitor {
 
     // MARK: - Start / Stop
 
-    /// Starts the event tap. Returns `true` on success, `false` if the tap
-    /// could not be created (usually because Accessibility permission is missing).
-    func start() -> Bool {
-        guard eventTap == nil else { return true }
+    /// Starts the event tap and reports whether startup failed because
+    /// permission is missing or because macOS could not create the tap.
+    func start() -> StartResult {
+        guard eventTap == nil else { return .alreadyRunning }
+
+        guard AXIsProcessTrusted() else {
+            return .permissionDenied
+        }
         
         let eventMask = CGEventMask(1 << CGEventType.flagsChanged.rawValue)
 
@@ -39,7 +50,7 @@ class EventMonitor {
             callback: eventTapCallback,
             userInfo: Unmanaged.passUnretained(self).toOpaque()
         ) else {
-            return false
+            return .failedToCreateTap
         }
 
         eventTap = tap
@@ -47,7 +58,7 @@ class EventMonitor {
         CFRunLoopAddSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
 
-        return true
+        return .started
     }
 
     func stop() {

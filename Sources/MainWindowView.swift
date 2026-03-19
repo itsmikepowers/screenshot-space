@@ -27,13 +27,23 @@ struct MainWindowView: View {
                 .environmentObject(appState)
         }
         .onAppear {
-            let hasCompletedOnboarding = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
-            if !appState.hasPermission && !hasCompletedOnboarding {
-                showOnboarding = true
-            }
+            updateOnboardingPresentation()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .onboardingComplete)) { _ in
-            showOnboarding = false
+        .onChange(of: appState.accessibilityStatus) { _ in
+            updateOnboardingPresentation()
         }
+        .onChange(of: appState.monitorStatus) { _ in
+            updateOnboardingPresentation()
+        }
+        .onChange(of: appState.hasCompletedOnboarding) { _ in
+            updateOnboardingPresentation()
+        }
+        .onChange(of: appState.isEnabled) { _ in
+            updateOnboardingPresentation()
+        }
+    }
+
+    private func updateOnboardingPresentation() {
+        showOnboarding = appState.shouldShowSetupGuidance
     }
 }
