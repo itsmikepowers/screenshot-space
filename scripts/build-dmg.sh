@@ -2,30 +2,28 @@
 set -euo pipefail
 
 # Build a distributable DMG for Screenshot Space
-# Creates a styled installer with drag-to-Applications layout
 
 APP_EXECUTABLE="ScreenshotSpace"
 APP_DISPLAY_NAME="Screenshot Space"
 BUILD_DIR=".build/release"
 STAGING_BUNDLE="${BUILD_DIR}/${APP_DISPLAY_NAME}.app"
-DMG_DIR="${BUILD_DIR}/dmg-staging"
 DMG_NAME="ScreenshotSpace"
 VERSION="${VERSION:-1.0.0}"
-DMG_TEMP="${BUILD_DIR}/${DMG_NAME}-${VERSION}-temp.dmg"
 DMG_OUTPUT="${BUILD_DIR}/${DMG_NAME}-${VERSION}.dmg"
 ICON_SOURCE="Assets/AppIcon.icns"
-VOL_NAME="${APP_DISPLAY_NAME}"
+FOLDER_ICON="Assets/FolderIcon.icns"
 
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
     echo "error: missing required command: $1"
+    echo "Install with: $2"
     exit 1
   fi
 }
 
-require_command swift
-require_command codesign
-require_command hdiutil
+require_command swift "xcode-select --install"
+require_command codesign "xcode-select --install"
+require_command fileicon "brew install fileicon"
 
 echo "=== Building Screenshot Space ${VERSION} ==="
 echo ""
@@ -55,67 +53,84 @@ echo "[3/5] Ad-hoc signing app bundle..."
 codesign --force --deep --sign - "${STAGING_BUNDLE}"
 codesign --verify --deep --strict "${STAGING_BUNDLE}" && echo "    Signature verified"
 
-echo "[4/5] Preparing DMG contents..."
-rm -rf "${DMG_DIR}"
-mkdir -p "${DMG_DIR}"
-cp -R "${STAGING_BUNDLE}" "${DMG_DIR}/"
-# Don't create symlink here - we'll create an alias via AppleScript
+echo "[4/5] Creating DMG..."
+rm -f "${DMG_OUTPUT}"
+TEMP_DMG="${BUILD_DIR}/temp-${DMG_NAME}.dmg"
+rm -f "${TEMP_DMG}"
 
-echo "[5/5] Creating DMG..."
-rm -f "${DMG_TEMP}" "${DMG_OUTPUT}"
+# Create a temporary staging folder
+STAGING_DIR="${BUILD_DIR}/dmg-staging"
+rm -rf "${STAGING_DIR}"
+mkdir -p "${STAGING_DIR}"
 
-# Create a read-write DMG first (needs to be big enough)
-hdiutil create -srcfolder "${DMG_DIR}" -volname "${VOL_NAME}" -fs HFS+ \
-  -fsargs "-c c=64,a=16,e=16" -format UDRW -size 10m "${DMG_TEMP}"
+# Copy app to staging
+cp -R "${STAGING_BUNDLE}" "${STAGING_DIR}/"
 
-# Mount it
-DEVICE=$(hdiutil attach -readwrite -noverify -noautoopen "${DMG_TEMP}" | egrep '^/dev/' | sed 1q | awk '{print $1}')
-echo "    Mounted device: ${DEVICE}"
+# Create read-write DMG from staging folder
+hdiutil create -volname "${APP_DISPLAY_NAME}" -srcfolder "${STAGING_DIR}" -ov -format UDRW "${TEMP_DMG}"
 
-sleep 2
+# Mount the DMG
+MOUNT_POINT=$(hdiutil attach "${TEMP_DMG}" -readwrite -noverify -noautoopen | grep "/Volumes/" | awk -F'\t' '{print $NF}')
+echo "    Mounted at: ${MOUNT_POINT}"
 
-# Use AppleScript to set up the Finder window and create Applications alias
-echo "    Configuring Finder view..."
-osascript << APPLESCRIPT
+echo "[5/5] Configuring DMG layout..."
+
+# Create Applications alias using AppleScript (gets proper icon)
+osascript <<EOF
 tell application "Finder"
-    tell disk "${VOL_NAME}"
+    set targetFolder to POSIX file "/Applications" as alias
+    set dmgVolume to POSIX file "${MOUNT_POINT}" as alias
+    make new alias file at dmgVolume to targetFolder with properties {name:"Applications"}
+end tell
+EOF
+echo "    Created Applications alias"
+
+# Set custom icon on the alias
+if [ -f "${FOLDER_ICON}" ]; then
+  fileicon set "${MOUNT_POINT}/Applications" "${FOLDER_ICON}" && echo "    Set folder icon"
+fi
+
+# Copy background image
+mkdir -p "${MOUNT_POINT}/.background"
+if [ -f "Assets/dmg-background.png" ]; then
+  cp "Assets/dmg-background.png" "${MOUNT_POINT}/.background/background.png"
+  echo "    Copied background image"
+fi
+
+# Configure window appearance with AppleScript
+osascript <<EOF
+tell application "Finder"
+    tell disk "${APP_DISPLAY_NAME}"
         open
         set current view of container window to icon view
         set toolbar visible of container window to false
         set statusbar visible of container window to false
-        set the bounds of container window to {100, 100, 600, 400}
-        set theViewOptions to the icon view options of container window
-        set arrangement of theViewOptions to not arranged
-        set icon size of theViewOptions to 100
-        set background color of theViewOptions to {8738, 8738, 8738}
-        
-        -- Create alias to Applications folder (this shows the proper icon)
-        make new alias file at container window to POSIX file "/Applications" with properties {name:"Applications"}
-        
-        set position of item "${APP_DISPLAY_NAME}.app" of container window to {125, 150}
-        set position of item "Applications" of container window to {375, 150}
-        
+        set bounds of container window to {200, 120, 740, 400}
+        set viewOptions to icon view options of container window
+        set arrangement of viewOptions to not arranged
+        set icon size of viewOptions to 80
+        try
+            set background picture of viewOptions to file ".background:background.png"
+        end try
+        set position of item "${APP_DISPLAY_NAME}.app" to {135, 100}
+        set position of item "Applications" to {405, 100}
         close
         open
-        update without registering applications
-        delay 3
         close
     end tell
 end tell
-APPLESCRIPT
+EOF
+echo "    Configured window layout"
 
-# Set permissions and sync
-chmod -Rf go-w "/Volumes/${VOL_NAME}"
+# Sync and unmount
 sync
-sync
+sleep 2
+hdiutil detach "${MOUNT_POINT}" -quiet
 
-# Unmount
-hdiutil detach "${DEVICE}"
-
-# Convert to compressed read-only DMG
-hdiutil convert "${DMG_TEMP}" -format UDZO -imagekey zlib-level=9 -o "${DMG_OUTPUT}"
-rm -f "${DMG_TEMP}"
-rm -rf "${DMG_DIR}"
+# Convert to compressed format
+hdiutil convert "${TEMP_DMG}" -format UDBZ -o "${DMG_OUTPUT}"
+rm -f "${TEMP_DMG}"
+rm -rf "${STAGING_DIR}"
 
 echo ""
 echo "=== Build Complete ==="
