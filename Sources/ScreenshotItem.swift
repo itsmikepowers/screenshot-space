@@ -49,7 +49,6 @@ class ScreenshotStore: ObservableObject {
 
     private var directory: URL { ScreenshotManager.saveDirectory }
     private var directoryMonitor: DispatchSourceFileSystemObject?
-    private var fileDescriptor: Int32 = -1
     private var isBackfilling = false
     private var pendingReload: DispatchWorkItem?
     private let reloadDebounceInterval: TimeInterval = 0.3
@@ -99,10 +98,7 @@ class ScreenshotStore: ObservableObject {
     private func stopWatching() {
         directoryMonitor?.cancel()
         directoryMonitor = nil
-        if fileDescriptor >= 0 {
-            close(fileDescriptor)
-            fileDescriptor = -1
-        }
+        // Don't close fd here — the cancel handler owns it.
     }
 
     // MARK: - Loading
@@ -185,8 +181,6 @@ class ScreenshotStore: ObservableObject {
             Self.logger.error("Failed to open directory for watching")
             return
         }
-        fileDescriptor = fd
-
         let source = DispatchSource.makeFileSystemObjectSource(
             fileDescriptor: fd,
             eventMask: [.write, .delete, .rename],
@@ -197,11 +191,8 @@ class ScreenshotStore: ObservableObject {
             self?.scheduleReload()
         }
 
-        source.setCancelHandler { [weak self] in
-            if let fd = self?.fileDescriptor, fd >= 0 {
-                close(fd)
-                self?.fileDescriptor = -1
-            }
+        source.setCancelHandler {
+            close(fd)
         }
 
         source.resume()
