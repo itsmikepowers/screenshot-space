@@ -87,6 +87,7 @@ class AppState: ObservableObject {
     }
 
     private var cancellables = Set<AnyCancellable>()
+    private var permissionPollTimer: Timer?
 
     var hasPermission: Bool {
         accessibilityStatus.isGranted
@@ -189,6 +190,11 @@ class AppState: ObservableObject {
         }
 
         observeAppActivation()
+        startPermissionPolling()
+    }
+    
+    deinit {
+        stopPermissionPolling()
     }
 
     // MARK: - Accessibility Permission
@@ -244,5 +250,30 @@ class AppState: ObservableObject {
                 _ = self?.refreshSystemAccess()
             }
             .store(in: &cancellables)
+    }
+    
+    // MARK: - Permission Polling
+    
+    /// Polls for accessibility permission changes every second.
+    /// This is necessary because macOS doesn't notify apps when permission is granted.
+    private func startPermissionPolling() {
+        stopPermissionPolling()
+        
+        permissionPollTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            
+            let currentlyTrusted = AXIsProcessTrusted()
+            let wasGranted = self.accessibilityStatus.isGranted
+            
+            if currentlyTrusted != wasGranted {
+                self.applyAccessibilityTrust(currentlyTrusted)
+                self.systemAccessRefreshID = UUID()
+            }
+        }
+    }
+    
+    private func stopPermissionPolling() {
+        permissionPollTimer?.invalidate()
+        permissionPollTimer = nil
     }
 }

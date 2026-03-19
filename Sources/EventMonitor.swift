@@ -16,6 +16,7 @@ class EventMonitor {
     var holdThreshold: TimeInterval = 0.25
     var onTap: (() -> Void)?
     var onHold: (() -> Void)?
+    var onTapDisabled: (() -> Void)?
 
     // MARK: - Internal State
 
@@ -119,11 +120,28 @@ class EventMonitor {
 
     // MARK: - Event Handling
 
+    /// Check if the event tap is currently enabled and valid
+    var isRunning: Bool {
+        guard let tap = eventTap else { return false }
+        return CGEvent.tapIsEnabled(tap: tap)
+    }
+    
+    /// Attempt to re-enable the tap if it was disabled
+    func reactivate() {
+        guard let tap = eventTap else { return }
+        if !CGEvent.tapIsEnabled(tap: tap) {
+            CGEvent.tapEnable(tap: tap, enable: true)
+        }
+    }
+
     fileprivate func handleEvent(type: CGEventType, event: CGEvent) {
-        // Re-enable the tap if macOS disabled it due to timeout
-        if type == .tapDisabledByTimeout {
+        // Re-enable the tap if macOS disabled it due to timeout or user action
+        if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             if let tap = eventTap {
                 CGEvent.tapEnable(tap: tap, enable: true)
+            }
+            DispatchQueue.main.async { [weak self] in
+                self?.onTapDisabled?()
             }
             return
         }

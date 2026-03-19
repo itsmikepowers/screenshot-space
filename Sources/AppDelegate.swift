@@ -18,6 +18,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var monitoringRetryCount = 0
     private let shortRetryLimit = 3
     private let recoveryRetryDelay: TimeInterval = 15.0
+    private var healthCheckTimer: Timer?
     
     private let menuDateFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -58,6 +59,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     func applicationWillTerminate(_ notification: Notification) {
         Self.logger.info("App terminating")
+        stopHealthCheck()
         stopMonitoring()
         retryMonitoringWorkItem?.cancel()
     }
@@ -407,12 +409,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self?.statusItem?.menu?.cancelTracking()
             ScreenshotManager.captureSelection()
         }
+        monitor.onTapDisabled = {
+            Self.logger.warning("Event tap was disabled by system, re-enabling...")
+        }
 
         switch monitor.start() {
         case .started, .alreadyRunning:
             eventMonitor = monitor
             monitoringRetryCount = 0
             appState.updateMonitorStatus(.active)
+            startHealthCheck()
             Self.logger.info("Event monitoring started successfully")
         case .permissionDenied:
             Self.logger.warning("Event monitoring blocked by missing Accessibility permission")
@@ -428,9 +434,39 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func stopMonitoring() {
+        stopHealthCheck()
         eventMonitor?.stop()
         eventMonitor = nil
         Self.logger.info("Event monitoring stopped")
+    }
+    
+    // MARK: - Health Check
+    
+    /// Periodically verify the event tap is still running and re-enable if needed
+    private func startHealthCheck() {
+        stopHealthCheck()
+        
+        healthCheckTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+            guard let self = self,
+                  let monitor = self.eventMonitor else { return }
+            
+            if !monitor.isRunning {
+                Self.logger.warning("Health check: event tap not running, attempting to reactivate")
+                monitor.reactivate()
+                
+                // If still not running after reactivate, try full restart
+                if !monitor.isRunning {
+                    Self.logger.warning("Health check: reactivate failed, attempting full restart")
+                    self.stopMonitoring()
+                    self.reconcileMonitoring(reason: "health check recovery")
+                }
+            }
+        }
+    }
+    
+    private func stopHealthCheck() {
+        healthCheckTimer?.invalidate()
+        healthCheckTimer = nil
     }
     
     private func scheduleMonitoringRetry() {

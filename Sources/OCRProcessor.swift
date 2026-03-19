@@ -81,6 +81,14 @@ enum OCRProcessor {
                 let data = try jsonEncoder.encode(metadata)
                 try data.write(to: jsonURL, options: .atomic)
                 logger.debug("OCR complete: \(url.lastPathComponent) (\(words.count) words)")
+                
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(
+                        name: .screenshotOCRCompleted,
+                        object: nil,
+                        userInfo: ["url": url]
+                    )
+                }
             } catch {
                 logger.error("Failed to save OCR metadata: \(error.localizedDescription)")
             }

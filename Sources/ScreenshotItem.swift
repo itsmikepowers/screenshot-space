@@ -2,6 +2,12 @@ import Foundation
 import AppKit
 import os.log
 
+// MARK: - Notifications
+
+extension Notification.Name {
+    static let screenshotOCRCompleted = Notification.Name("screenshotOCRCompleted")
+}
+
 // MARK: - Model
 
 struct ScreenshotItem: Identifiable, Equatable {
@@ -12,6 +18,7 @@ struct ScreenshotItem: Identifiable, Equatable {
     let thumbnail: NSImage
     var extractedText: String?
     var wordCount: Int?
+    var isProcessingOCR: Bool
 
     private static let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -51,6 +58,30 @@ class ScreenshotStore: ObservableObject {
         loadScreenshots()
         startWatching()
         backfillOCR()
+        observeOCRCompletion()
+    }
+    
+    private func observeOCRCompletion() {
+        NotificationCenter.default.addObserver(
+            forName: .screenshotOCRCompleted,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self = self,
+                  let url = notification.userInfo?["url"] as? URL else { return }
+            self.updateItemAfterOCR(url: url)
+        }
+    }
+    
+    private func updateItemAfterOCR(url: URL) {
+        guard let index = screenshots.firstIndex(where: { $0.url == url }) else { return }
+        
+        let metadata = OCRProcessor.loadMetadata(for: url)
+        screenshots[index].extractedText = metadata?.extractedText
+        screenshots[index].wordCount = metadata?.wordCount
+        screenshots[index].isProcessingOCR = false
+        
+        Self.logger.debug("Updated OCR for: \(url.lastPathComponent)")
     }
 
     deinit {
@@ -124,7 +155,8 @@ class ScreenshotStore: ObservableObject {
                             date: date,
                             thumbnail: thumbnail,
                             extractedText: metadata?.extractedText,
-                            wordCount: metadata?.wordCount
+                            wordCount: metadata?.wordCount,
+                            isProcessingOCR: metadata == nil
                         )
                     }
                 }

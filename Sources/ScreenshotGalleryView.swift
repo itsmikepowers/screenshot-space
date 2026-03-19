@@ -386,6 +386,22 @@ struct ScreenshotCard: View {
                         .padding(8)
                         .transition(.scale.combined(with: .opacity))
                 }
+                
+                // OCR processing indicator
+                if item.isProcessingOCR {
+                    HStack(spacing: 4) {
+                        ProgressView()
+                            .scaleEffect(0.6)
+                        Text("OCR")
+                            .font(.system(size: 9, weight: .medium))
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .padding(8)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                    .transition(.opacity)
+                }
             }
 
             VStack(alignment: .leading, spacing: 2) {
@@ -412,6 +428,7 @@ struct ScreenshotCard: View {
                 .stroke(isSelected ? Color.accentColor.opacity(0.6) : Color.clear, lineWidth: 2)
         )
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
+        .animation(.easeInOut(duration: 0.2), value: item.isProcessingOCR)
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.15)) {
                 isHovering = hovering
@@ -468,8 +485,16 @@ struct ScreenshotListRow: View {
 
             Spacer()
 
-            // Word count
-            if let wc = item.wordCount, wc > 0 {
+            // OCR status or word count
+            if item.isProcessingOCR {
+                HStack(spacing: 4) {
+                    ProgressView()
+                        .scaleEffect(0.5)
+                    Text("Processing...")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                }
+            } else if let wc = item.wordCount, wc > 0 {
                 Text("\(wc) words")
                     .font(.system(size: 11))
                     .foregroundColor(.secondary.opacity(0.7))
@@ -484,6 +509,7 @@ struct ScreenshotListRow: View {
         )
         .animation(.easeInOut(duration: 0.1), value: isHovering)
         .animation(.easeInOut(duration: 0.15), value: isSelected)
+        .animation(.easeInOut(duration: 0.2), value: item.isProcessingOCR)
         .onHover { hovering in
             isHovering = hovering
         }
