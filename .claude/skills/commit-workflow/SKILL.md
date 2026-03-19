@@ -160,7 +160,7 @@ If a commit touches both app code and dev-only files, it still needs a release (
 
 #### Version number rules
 
-Read the current version from `Info.plist` (`CFBundleShortVersionString`). The format is `MAJOR.MINOR.PATCH`.
+Read the current version from `Info.plist` (`CFBundleShortVersionString`) **after completing the remote sync** (see below). The format is `MAJOR.MINOR.PATCH`.
 
 | Bump | When | Example |
 |------|------|---------|
@@ -170,16 +170,42 @@ Read the current version from `Info.plist` (`CFBundleShortVersionString`). The f
 
 The default is always PATCH. Only bump MAJOR or MINOR if the user explicitly says so. Don't ask — just bump PATCH unless told otherwise.
 
+#### Sync with remote before releasing
+
+Before touching version numbers, make sure local is up to date with the remote. Without this, you risk bumping to a version that already exists on the remote — for example, if someone (or a previous session) pushed a release that bumped 1.0.2 → 1.0.3, and your local still has 1.0.2, you'd create a second 1.0.3. This step prevents that.
+
+**Run this sequence before every release:**
+
+1. **Fetch the latest remote state**: `git fetch origin`
+2. **Check for divergence**: `git log HEAD..origin/main --oneline`
+   - If this returns nothing, local is up to date — proceed to the release steps below.
+   - If this returns commits, the remote has work that isn't on your local branch. Continue to step 3.
+3. **Stash any uncommitted changes** (if the main feature commit hasn't been made yet):
+   - `git stash push -m "pre-rebase stash"` — save working directory changes so the rebase starts clean.
+4. **Rebase onto the remote**: `git rebase origin/main`
+   - **If the rebase succeeds cleanly**, move on.
+   - **If there are conflicts**, resolve them:
+     - Run `git diff --name-only --diff-filter=U` to list conflicted files.
+     - Open each conflicted file, read the conflict markers, and resolve by keeping the correct version of each section. For version-related files (`Info.plist`, `Makefile`, `README.md`), the remote version is almost always correct since it reflects the latest release — accept theirs and you'll bump again in the release steps.
+     - `git add <resolved-files>` then `git rebase --continue`.
+     - Repeat until the rebase finishes.
+5. **Pop the stash** (if you stashed in step 3):
+   - `git stash pop`
+   - If the pop conflicts, resolve the same way — read the markers, pick the right content, and move on.
+
+After this sequence, `HEAD` includes all remote commits and `Info.plist` reflects the latest released version. Now you can safely read the version and bump it.
+
 #### Release steps
 
-After the main commit is verified, perform these steps:
+After the main commit is verified and the remote sync above is complete, perform these steps:
 
-1. **Bump the version** in `Info.plist` — update both `CFBundleVersion` and `CFBundleShortVersionString`
-2. **Update version references** in `README.md` — DMG download links, version badges, any hardcoded version strings (e.g., `ScreenshotSpace-1.0.2.dmg` → `ScreenshotSpace-1.0.3.dmg`)
-3. **Update the `VERSION` default** in `Makefile` (the `VERSION ?= x.y.z` line)
-4. **Build the DMG**: `VERSION={new_version} make dmg`
-5. **Remove the old DMG** from `releases/` and **add the new one**: `git rm releases/ScreenshotSpace-{old}.dmg` then `git add releases/ScreenshotSpace-{new}.dmg`
-6. **Commit everything together**:
+1. **Read the current version** from `Info.plist` (`CFBundleShortVersionString`) — this is now guaranteed to reflect the latest release since you just rebased
+2. **Bump the version** in `Info.plist` — update both `CFBundleVersion` and `CFBundleShortVersionString`
+3. **Update version references** in `README.md` — DMG download links, version badges, any hardcoded version strings (e.g., `ScreenshotSpace-1.0.2.dmg` → `ScreenshotSpace-1.0.3.dmg`)
+4. **Update the `VERSION` default** in `Makefile` (the `VERSION ?= x.y.z` line)
+5. **Build the DMG**: `VERSION={new_version} make dmg`
+6. **Remove the old DMG** from `releases/` and **add the new one**: `git rm releases/ScreenshotSpace-{old}.dmg` then `git add releases/ScreenshotSpace-{new}.dmg`
+7. **Commit everything together**:
    ```
    chore(release): bump version to {new_version}
    ```

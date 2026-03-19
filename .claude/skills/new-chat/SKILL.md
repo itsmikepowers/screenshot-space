@@ -1,7 +1,7 @@
 ---
 name: new-chat
 description: "Initialize a coding session by loading project context from git history, conventions, and codebase state. Use at the start of a new conversation, when the user asks to understand current project state, or before beginning implementation work."
-argument_hint: "<N (number of commits to load), optional additional instructions or focus areas>"
+argument-hint: "<N (number of commits to load), optional additional instructions or focus areas>"
 ---
 
 # Session Init
