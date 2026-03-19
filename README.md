@@ -11,11 +11,12 @@ A lightning-fast macOS screenshot utility that lives in your menu bar. Capture, 
 ## Features
 
 ### Instant Capture
-- **Tap Option** → Full-screen screenshot to clipboard
-- **Hold Option** → Drag to select a region
+- **Tap modifier** → Full-screen screenshot to clipboard
+- **Hold modifier** → Drag to select a region
+- Configurable hotkey — use Option (default), Command, Shift, Control, or any combination
 
 ### Smart Organization
-- All screenshots saved to `~/Pictures/ScreenshotSpace/`
+- Screenshots saved to `~/Pictures/ScreenshotSpace/` by default (configurable)
 - Automatic thumbnails and metadata
 - Grid or list view with multi-select support
 
@@ -41,7 +42,7 @@ curl -fsSL https://raw.githubusercontent.com/itsmikepowers/screenshot-space/main
 
 ### Download DMG
 
-1. Download [ScreenshotSpace-1.0.3.dmg](releases/ScreenshotSpace-1.0.3.dmg)
+1. Download [ScreenshotSpace-1.0.4.dmg](releases/ScreenshotSpace-1.0.4.dmg)
 2. Open the DMG and drag Screenshot Space to Applications
 3. Right-click the app and select **Open** (required on first launch)
 4. Grant Accessibility permission when prompted
@@ -112,6 +113,8 @@ Sources/
 | Setting | Description |
 |---------|-------------|
 | Hold Threshold | Time before drag-select activates (0.1–1.0s) |
+| Hotkey | Choose which modifier keys trigger screenshots (default: Option) |
+| Screenshot Directory | Choose where screenshots are saved (default: `~/Pictures/ScreenshotSpace/`) |
 | Show in Menu Bar | Toggle menu bar icon |
 | Show in Dock | Toggle dock icon |
 | Launch at Login | Start with macOS |
