@@ -76,6 +76,38 @@ tccutil reset Accessibility com.screenshotspace.app
 
 ---
 
+## Architecture
+
+Swift sources live under `Sources/` (single SwiftPM executable target). Layout:
+
+```
+Sources/
+├── App/                 # process entry, NSApplication delegate, shared app state
+│   ├── main.swift
+│   ├── AppDelegate.swift
+│   └── AppState.swift
+├── UI/                  # SwiftUI main window, tabs, gallery AppKit bridge
+│   ├── MainWindowView.swift
+│   ├── ScreenshotGalleryView.swift
+│   ├── SearchView.swift
+│   ├── SettingsView.swift
+│   └── OnboardingView.swift
+├── Capture/             # global event monitoring, region selection, capture I/O
+│   ├── EventMonitor.swift
+│   ├── RegionSelector.swift
+│   └── ScreenshotManager.swift
+├── Media/               # screenshot model, preview window, export / drag helpers
+│   ├── ScreenshotItem.swift
+│   ├── ScreenshotPreviewWindowPresenter.swift
+│   └── FileExportDrag.swift
+├── Search/              # on-device OCR (Vision) for search
+│   └── OCRProcessor.swift
+└── Services/            # cross-cutting non-UI (e.g. updates)
+    └── Updater.swift
+```
+
+---
+
 ## License
 
 MIT © [Mike Powers](https://github.com/itsmikepowers)
