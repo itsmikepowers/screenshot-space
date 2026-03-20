@@ -778,6 +778,25 @@ class KeyCatcherView: NSView {
 
 // MARK: - Screenshot Preview
 
+@ViewBuilder
+private func previewToolbarIconButton(
+    systemName: String,
+    help: String,
+    tint: Color = Color(nsColor: .labelColor),
+    action: @escaping () -> Void
+) -> some View {
+    Button(action: action) {
+        Image(systemName: systemName)
+            .font(.system(size: 15, weight: .medium))
+            .foregroundStyle(tint)
+            .frame(width: 28, height: 24)
+            .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .help(help)
+    .accessibilityLabel(help)
+}
+
 struct ScreenshotPreviewView: View {
     let item: ScreenshotItem
     let store: ScreenshotStore
@@ -787,49 +806,41 @@ struct ScreenshotPreviewView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Info + Actions (toolbar at top)
-            VStack(spacing: 12) {
-                HStack {
-                    Text(item.filename)
-                        .font(.headline)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Spacer()
-                    Text(item.dateString)
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                }
+            // Compact toolbar (filename is in the window title bar)
+            HStack(spacing: 8) {
+                Text(item.dateString)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
 
-                HStack(spacing: 16) {
-                    Button {
+                Spacer(minLength: 8)
+
+                HStack(spacing: 2) {
+                    previewToolbarIconButton(
+                        systemName: "doc.on.doc",
+                        help: "Copy to Clipboard"
+                    ) {
                         store.copyToClipboard(item)
-                    } label: {
-                        Label("Copy to Clipboard", systemImage: "doc.on.doc")
-                            .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.large)
 
-                    Button {
+                    previewToolbarIconButton(
+                        systemName: "folder",
+                        help: "Reveal in Finder"
+                    ) {
                         store.revealInFinder(item)
-                    } label: {
-                        Label("Reveal in Finder", systemImage: "folder")
-                            .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.large)
 
-                    Button(role: .destructive) {
+                    previewToolbarIconButton(
+                        systemName: "trash",
+                        help: "Delete",
+                        tint: .red
+                    ) {
                         showDeleteConfirm = true
-                    } label: {
-                        Label("Delete", systemImage: "trash")
-                            .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.large)
                 }
             }
-            .padding(16)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
             .background(Color(nsColor: .windowBackgroundColor))
 
             Divider()

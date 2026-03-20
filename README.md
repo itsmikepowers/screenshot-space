@@ -23,7 +23,7 @@ A fast macOS screenshot utility that lives in your menu bar. Capture, organize, 
 
 ### Download DMG
 
-1. Download [ScreenshotSpace-1.0.10.dmg](releases/ScreenshotSpace-1.0.10.dmg)
+1. Download [ScreenshotSpace-1.0.11.dmg](releases/ScreenshotSpace-1.0.11.dmg)
 2. Open the DMG and drag Screenshot Space to Applications
 3. Launch from Applications
 4. Grant Accessibility permission when prompted

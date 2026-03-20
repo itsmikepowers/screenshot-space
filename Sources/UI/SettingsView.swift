@@ -171,17 +171,39 @@ struct SettingsView: View {
                     .font(.caption)
                 }
 
-                permissionStatusRow(
-                    title: "Screen Recording",
-                    symbolName: appState.hasScreenRecordingPermission ? "checkmark.circle.fill" : "xmark.circle.fill",
-                    tint: appState.hasScreenRecordingPermission ? .green : .red,
-                    status: appState.hasScreenRecordingPermission ? "Granted" : "Not Granted",
-                    detail: appState.hasScreenRecordingPermission
-                        ? nil
-                        : "Required for the Recapture Region feature. Grant in System Settings → Privacy & Security → Screen Recording."
-                )
+                Group {
+                    switch appState.screenRecordingPermissionGranted {
+                    case nil:
+                        permissionStatusRow(
+                            title: "Screen Recording",
+                            symbolName: "circle.dashed",
+                            tint: .secondary,
+                            status: "Not checked",
+                            detail: "Tap Check access to test permission. macOS may show a prompt when you do."
+                        )
+                    case .some(true):
+                        permissionStatusRow(
+                            title: "Screen Recording",
+                            symbolName: "checkmark.circle.fill",
+                            tint: .green,
+                            status: "Granted",
+                            detail: nil
+                        )
+                    case .some(false):
+                        permissionStatusRow(
+                            title: "Screen Recording",
+                            symbolName: "xmark.circle.fill",
+                            tint: .red,
+                            status: "Not Granted",
+                            detail: "Required for the Recapture Region feature. Grant in System Settings → Privacy & Security → Screen Recording."
+                        )
+                    }
+                }
 
-                if !appState.hasScreenRecordingPermission {
+                HStack {
+                    Button("Check access") {
+                        appState.refreshScreenRecordingPermission()
+                    }
                     Button("Open Screen Recording Settings") {
                         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
                             NSWorkspace.shared.open(url)

@@ -103,6 +103,9 @@ class AppState: ObservableObject {
     @Published private(set) var accessibilityStatus: AccessibilityPermissionStatus
     @Published private(set) var monitorStatus: MonitorStatus = .inactive
     @Published private(set) var systemAccessRefreshID = UUID()
+    /// `nil` until the user taps **Check access** in Settings — avoids `CGWindowListCreateImage` and the
+    /// Screen Recording prompt until they explicitly choose to test.
+    @Published private(set) var screenRecordingPermissionGranted: Bool? = nil
 
     @Published var hasCompletedOnboarding: Bool {
         didSet { UserDefaults.standard.set(hasCompletedOnboarding, forKey: "hasCompletedOnboarding") }
@@ -117,13 +120,6 @@ class AppState: ObservableObject {
 
     var hasPermission: Bool {
         accessibilityStatus.isGranted
-    }
-
-    var hasScreenRecordingPermission: Bool {
-        // Attempt a tiny capture to check if Screen Recording is granted
-        let testRect = CGRect(x: 0, y: 0, width: 1, height: 1)
-        let img = CGWindowListCreateImage(testRect, .optionOnScreenOnly, kCGNullWindowID, .nominalResolution)
-        return img != nil
     }
 
     var hotkeyDisplayString: String {
@@ -325,6 +321,13 @@ class AppState: ObservableObject {
         applyAccessibilityTrust(trusted)
         systemAccessRefreshID = UUID()
         return trusted
+    }
+
+    /// Probes Screen Recording with a 1×1 capture. Only call from an explicit user action (e.g. Check access).
+    func refreshScreenRecordingPermission() {
+        let testRect = CGRect(x: 0, y: 0, width: 1, height: 1)
+        let img = CGWindowListCreateImage(testRect, .optionOnScreenOnly, kCGNullWindowID, .nominalResolution)
+        screenRecordingPermissionGranted = (img != nil)
     }
 
     /// Triggers the macOS system prompt for Accessibility permission and opens
