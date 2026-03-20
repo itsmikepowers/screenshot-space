@@ -87,33 +87,88 @@ Should show `source=Notarized Developer ID`.
 
 ### 8. Build DMG from notarized app
 
+**IMPORTANT**: This step creates the installer DMG with proper layout. Use Finder to create the Applications alias (not `ln -s`) and configure the window layout with AppleScript.
+
+First, eject any stale volumes:
+
+```bash
+hdiutil detach "/Volumes/Screenshot Space" -force 2>/dev/null || true
+hdiutil detach "/Volumes/Screenshot Space 1" -force 2>/dev/null || true
+```
+
+Create the writable DMG:
+
 ```bash
 VERSION="X.Y.Z"  # use the version from input
+APP_BUNDLE=".build/release/Screenshot Space.app"
 DMG_OUTPUT=".build/release/ScreenshotSpace-${VERSION}.dmg"
+TEMP_DMG=".build/release/temp-ScreenshotSpace.dmg"
 STAGING_DIR=".build/release/dmg-staging"
 
-rm -rf "$STAGING_DIR" "$DMG_OUTPUT" /tmp/temp-notarized.dmg
+rm -rf "$STAGING_DIR" "$DMG_OUTPUT" "$TEMP_DMG"
 mkdir -p "$STAGING_DIR"
 cp -R "$APP_BUNDLE" "$STAGING_DIR/"
 
-hdiutil create -volname "Screenshot Space" -srcfolder "$STAGING_DIR" -ov -format UDRW /tmp/temp-notarized.dmg
+hdiutil create -volname "Screenshot Space" -srcfolder "$STAGING_DIR" -ov -format UDRW "$TEMP_DMG"
+```
 
-MOUNT_POINT=$(hdiutil attach /tmp/temp-notarized.dmg -readwrite -noverify -noautoopen | grep "/Volumes/" | awk -F'\t' '{print $NF}')
-ln -s /Applications "$MOUNT_POINT/Applications"
+Mount and configure the DMG:
 
-if [ -f "Assets/DMG/FolderIcon.icns" ]; then
-  fileicon set "$MOUNT_POINT/Applications" "Assets/DMG/FolderIcon.icns" 2>/dev/null || true
-fi
+```bash
+MOUNT_POINT=$(hdiutil attach "$TEMP_DMG" -readwrite -noverify -noautoopen | grep "/Volumes/" | awk -F'\t' '{print $NF}')
 
+# Create Applications alias using Finder (NOT ln -s)
+osascript <<EOF
+tell application "Finder"
+    set targetFolder to POSIX file "/Applications" as alias
+    set dmgVolume to POSIX file "$MOUNT_POINT" as alias
+    make new alias file at dmgVolume to targetFolder with properties {name:"Applications"}
+end tell
+EOF
+
+# Set folder icon
+fileicon set "$MOUNT_POINT/Applications" "Assets/DMG/FolderIcon.icns"
+
+# Copy background
 mkdir -p "$MOUNT_POINT/.background"
-if [ -f "Assets/DMG/dmg-background.png" ]; then
-  cp "Assets/DMG/dmg-background.png" "$MOUNT_POINT/.background/background.png"
-fi
+cp "Assets/DMG/dmg-background.png" "$MOUNT_POINT/.background/background.png"
+```
 
-sleep 1
+Configure the window layout:
+
+```bash
+osascript <<'EOF'
+tell application "Finder"
+    tell disk "Screenshot Space"
+        open
+        set current view of container window to icon view
+        set toolbar visible of container window to false
+        set statusbar visible of container window to false
+        set bounds of container window to {200, 120, 740, 400}
+        set viewOptions to icon view options of container window
+        set arrangement of viewOptions to not arranged
+        set icon size of viewOptions to 80
+        try
+            set background picture of viewOptions to file ".background:background.png"
+        end try
+        set position of item "Screenshot Space.app" to {135, 100}
+        set position of item "Applications" to {405, 100}
+        close
+        open
+        close
+    end tell
+end tell
+EOF
+```
+
+Finalize the DMG:
+
+```bash
+sync
+sleep 2
 hdiutil detach "$MOUNT_POINT" -quiet
-hdiutil convert /tmp/temp-notarized.dmg -format UDBZ -o "$DMG_OUTPUT"
-rm -f /tmp/temp-notarized.dmg
+hdiutil convert "$TEMP_DMG" -format UDBZ -o "$DMG_OUTPUT"
+rm -f "$TEMP_DMG"
 rm -rf "$STAGING_DIR"
 ```
 
