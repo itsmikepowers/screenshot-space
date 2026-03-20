@@ -33,6 +33,14 @@ struct OnboardingView: View {
                 )
 
                 onboardingStatusCard(
+                    title: "Screen Recording",
+                    symbolName: screenRecordingSymbolName,
+                    tint: screenRecordingTintColor,
+                    status: screenRecordingStatus,
+                    detail: screenRecordingDetail
+                )
+
+                onboardingStatusCard(
                     title: "Hotkey Listener",
                     symbolName: hotkeySymbolName,
                     tint: hotkeyTintColor,
@@ -81,9 +89,10 @@ struct OnboardingView: View {
             Spacer()
         }
         .padding(30)
-        .frame(minWidth: 440, idealWidth: 440, minHeight: 360, idealHeight: 360)
+        .frame(minWidth: 440, idealWidth: 440, minHeight: 520, idealHeight: 520)
         .onAppear {
             appState.refreshSystemAccess()
+            appState.refreshScreenRecordingPermission()
         }
     }
 
@@ -134,6 +143,52 @@ struct OnboardingView: View {
             return .orange
         case .failedToStart:
             return .red
+        }
+    }
+    
+    // MARK: - Screen Recording Status
+    
+    private var screenRecordingSymbolName: String {
+        switch appState.screenRecordingPermissionGranted {
+        case .some(true):
+            return "checkmark.circle.fill"
+        case .some(false):
+            return "xmark.circle.fill"
+        case nil:
+            return "circle.dashed"
+        }
+    }
+    
+    private var screenRecordingTintColor: Color {
+        switch appState.screenRecordingPermissionGranted {
+        case .some(true):
+            return .green
+        case .some(false):
+            return .red
+        case nil:
+            return .secondary
+        }
+    }
+    
+    private var screenRecordingStatus: String {
+        switch appState.screenRecordingPermissionGranted {
+        case .some(true):
+            return "Granted"
+        case .some(false):
+            return "Not Granted"
+        case nil:
+            return "Not Checked"
+        }
+    }
+    
+    private var screenRecordingDetail: String {
+        switch appState.screenRecordingPermissionGranted {
+        case .some(true):
+            return "Screenshot Space can capture your screen."
+        case .some(false):
+            return "Required for region capture. Grant in System Settings → Privacy & Security → Screen Recording."
+        case nil:
+            return "Will be checked when you take your first screenshot."
         }
     }
 

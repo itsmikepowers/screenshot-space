@@ -335,25 +335,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - State Observation
 
     private func observeStateChanges() {
-        appState.$holdThreshold
-            .sink { [weak self] threshold in
-                self?.eventMonitor?.holdThreshold = threshold
+        appState.$fullScreenMode
+            .sink { [weak self] config in
+                self?.updateEventMonitorConfig()
             }
             .store(in: &cancellables)
-
-        appState.$hotkeyModifiers
-            .removeDuplicates()
-            .dropFirst()
-            .sink { [weak self] rawValue in
-                self?.eventMonitor?.triggerModifiers = CGEventFlags(rawValue: rawValue)
+        
+        appState.$dragMode
+            .sink { [weak self] config in
+                self?.updateEventMonitorConfig()
             }
             .store(in: &cancellables)
-
-        appState.$recaptureHotkeyModifiers
-            .removeDuplicates()
-            .dropFirst()
-            .sink { [weak self] rawValue in
-                self?.eventMonitor?.recaptureTriggerModifiers = CGEventFlags(rawValue: rawValue)
+        
+        appState.$regionMode
+            .sink { [weak self] config in
+                self?.updateEventMonitorConfig()
             }
             .store(in: &cancellables)
 
@@ -454,6 +450,34 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         startMonitoring()
     }
 
+    private func updateEventMonitorConfig() {
+        guard let monitor = eventMonitor else { return }
+        
+        monitor.fullScreenConfig = HotkeyConfig(
+            isEnabled: appState.fullScreenMode.isEnabled,
+            modifiers: CGEventFlags(rawValue: appState.fullScreenMode.modifiers),
+            isTapAndHold: appState.fullScreenMode.triggerType == .tapAndHold,
+            holdThreshold: appState.fullScreenMode.holdThreshold,
+            action: monitor.fullScreenConfig.action
+        )
+        
+        monitor.dragConfig = HotkeyConfig(
+            isEnabled: appState.dragMode.isEnabled,
+            modifiers: CGEventFlags(rawValue: appState.dragMode.modifiers),
+            isTapAndHold: appState.dragMode.triggerType == .tapAndHold,
+            holdThreshold: appState.dragMode.holdThreshold,
+            action: monitor.dragConfig.action
+        )
+        
+        monitor.regionConfig = HotkeyConfig(
+            isEnabled: appState.regionMode.isEnabled,
+            modifiers: CGEventFlags(rawValue: appState.regionMode.modifiers),
+            isTapAndHold: appState.regionMode.triggerType == .tapAndHold,
+            holdThreshold: appState.regionMode.holdThreshold,
+            action: monitor.regionConfig.action
+        )
+    }
+    
     private func startMonitoring() {
         guard eventMonitor == nil else {
             Self.logger.debug("Event monitor already running")
@@ -464,30 +488,52 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         cancelMonitoringRetry()
 
         let monitor = EventMonitor()
-        monitor.holdThreshold = appState.holdThreshold
-        monitor.triggerModifiers = CGEventFlags(rawValue: appState.hotkeyModifiers)
-        monitor.onTap = { [weak self] in
-            self?.statusItem?.menu?.cancelTracking()
-            ScreenshotManager.captureFullScreen()
-        }
-        monitor.onHold = { [weak self] in
-            self?.statusItem?.menu?.cancelTracking()
-            ScreenshotManager.captureSelection()
-        }
-        monitor.recaptureTriggerModifiers = CGEventFlags(rawValue: appState.recaptureHotkeyModifiers)
-        monitor.onRecaptureTap = { [weak self] in
-            guard let self = self, let rect = self.appState.lastCapturedRegion else {
-                NSSound.beep()
-                return
+        
+        // Configure full screen mode
+        monitor.fullScreenConfig = HotkeyConfig(
+            isEnabled: appState.fullScreenMode.isEnabled,
+            modifiers: CGEventFlags(rawValue: appState.fullScreenMode.modifiers),
+            isTapAndHold: appState.fullScreenMode.triggerType == .tapAndHold,
+            holdThreshold: appState.fullScreenMode.holdThreshold,
+            action: { [weak self] in
+                self?.statusItem?.menu?.cancelTracking()
+                ScreenshotManager.captureFullScreen()
             }
-            guard ScreenshotManager.isRegionOnScreen(rect) else {
-                self.appState.lastCapturedRegion = nil
-                NSSound.beep()
-                return
+        )
+        
+        // Configure drag mode
+        monitor.dragConfig = HotkeyConfig(
+            isEnabled: appState.dragMode.isEnabled,
+            modifiers: CGEventFlags(rawValue: appState.dragMode.modifiers),
+            isTapAndHold: appState.dragMode.triggerType == .tapAndHold,
+            holdThreshold: appState.dragMode.holdThreshold,
+            action: { [weak self] in
+                self?.statusItem?.menu?.cancelTracking()
+                ScreenshotManager.captureSelection()
             }
-            self.statusItem?.menu?.cancelTracking()
-            ScreenshotManager.captureAndSaveRegion(rect)
-        }
+        )
+        
+        // Configure region mode
+        monitor.regionConfig = HotkeyConfig(
+            isEnabled: appState.regionMode.isEnabled,
+            modifiers: CGEventFlags(rawValue: appState.regionMode.modifiers),
+            isTapAndHold: appState.regionMode.triggerType == .tapAndHold,
+            holdThreshold: appState.regionMode.holdThreshold,
+            action: { [weak self] in
+                guard let self = self, let rect = self.appState.lastCapturedRegion else {
+                    NSSound.beep()
+                    return
+                }
+                guard ScreenshotManager.isRegionOnScreen(rect) else {
+                    self.appState.lastCapturedRegion = nil
+                    NSSound.beep()
+                    return
+                }
+                self.statusItem?.menu?.cancelTracking()
+                ScreenshotManager.captureAndSaveRegion(rect)
+            }
+        )
+        
         monitor.onTapDisabled = {
             Self.logger.warning("Event tap was disabled by system, re-enabling...")
         }

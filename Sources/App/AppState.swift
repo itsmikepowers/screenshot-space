@@ -41,12 +41,90 @@ enum MonitorStatus: Equatable {
     }
 }
 
+// MARK: - Screenshot Mode Configuration
+
+enum TriggerType: String, CaseIterable, Identifiable {
+    case tap = "tap"
+    case tapAndHold = "tapAndHold"
+    
+    var id: String { rawValue }
+    
+    var displayName: String {
+        switch self {
+        case .tap: return "Tap"
+        case .tapAndHold: return "Tap and Hold"
+        }
+    }
+}
+
+struct ScreenshotModeConfig: Equatable {
+    var isEnabled: Bool
+    var modifiers: UInt64
+    var triggerType: TriggerType
+    var holdThreshold: Double
+    
+    static let defaultFullScreen = ScreenshotModeConfig(
+        isEnabled: true,
+        modifiers: CGEventFlags.maskAlternate.rawValue,
+        triggerType: .tap,
+        holdThreshold: 0.25
+    )
+    
+    static let defaultDrag = ScreenshotModeConfig(
+        isEnabled: true,
+        modifiers: CGEventFlags.maskAlternate.rawValue,
+        triggerType: .tapAndHold,
+        holdThreshold: 0.25
+    )
+    
+    static let defaultRegion = ScreenshotModeConfig(
+        isEnabled: false,
+        modifiers: CGEventFlags([.maskSecondaryFn]).rawValue,
+        triggerType: .tap,
+        holdThreshold: 0.25
+    )
+    
+    func displayString(short: Bool = true) -> String {
+        let flags = CGEventFlags(rawValue: modifiers)
+        var parts: [String] = []
+        if short {
+            if flags.contains(.maskSecondaryFn) { parts.append("🌐") }
+            if flags.contains(.maskControl) { parts.append("⌃") }
+            if flags.contains(.maskShift) { parts.append("⇧") }
+            if flags.contains(.maskAlternate) { parts.append("⌥") }
+            if flags.contains(.maskCommand) { parts.append("⌘") }
+        } else {
+            if flags.contains(.maskSecondaryFn) { parts.append("🌐 Fn") }
+            if flags.contains(.maskControl) { parts.append("⌃ Control") }
+            if flags.contains(.maskShift) { parts.append("⇧ Shift") }
+            if flags.contains(.maskAlternate) { parts.append("⌥ Option") }
+            if flags.contains(.maskCommand) { parts.append("⌘ Command") }
+        }
+        return parts.isEmpty ? "None" : parts.joined(separator: short ? "" : " + ")
+    }
+}
+
 class AppState: ObservableObject {
 
     // MARK: - Published Properties
+    
+    // Screenshot Mode Configurations
+    @Published var fullScreenMode: ScreenshotModeConfig {
+        didSet { saveFullScreenMode() }
+    }
+    
+    @Published var dragMode: ScreenshotModeConfig {
+        didSet { saveDragMode() }
+    }
+    
+    @Published var regionMode: ScreenshotModeConfig {
+        didSet { saveRegionMode() }
+    }
 
-    @Published var holdThreshold: Double {
-        didSet { UserDefaults.standard.set(holdThreshold, forKey: "holdThreshold") }
+    // Legacy properties for backward compatibility (computed from new modes)
+    var holdThreshold: Double {
+        get { dragMode.holdThreshold }
+        set { dragMode.holdThreshold = newValue }
     }
 
     @Published var isEnabled: Bool {
@@ -75,8 +153,10 @@ class AppState: ObservableObject {
         didSet { UserDefaults.standard.set(showInDock, forKey: "showInDock") }
     }
 
-    @Published var hotkeyModifiers: UInt64 {
-        didSet { UserDefaults.standard.set(Int(hotkeyModifiers), forKey: "hotkeyModifiers") }
+    // Legacy computed property - maps to fullScreenMode for backward compatibility
+    var hotkeyModifiers: UInt64 {
+        get { fullScreenMode.modifiers }
+        set { fullScreenMode.modifiers = newValue }
     }
 
     @Published var screenshotDirectory: String {
@@ -96,8 +176,10 @@ class AppState: ObservableObject {
         }
     }
 
-    @Published var recaptureHotkeyModifiers: UInt64 {
-        didSet { UserDefaults.standard.set(Int(recaptureHotkeyModifiers), forKey: "recaptureHotkeyModifiers") }
+    // Legacy computed property - maps to regionMode for backward compatibility
+    var recaptureHotkeyModifiers: UInt64 {
+        get { regionMode.modifiers }
+        set { regionMode.modifiers = newValue }
     }
 
     @Published private(set) var accessibilityStatus: AccessibilityPermissionStatus
@@ -123,45 +205,59 @@ class AppState: ObservableObject {
     }
 
     var hotkeyDisplayString: String {
-        let flags = CGEventFlags(rawValue: hotkeyModifiers)
-        var parts: [String] = []
-        if flags.contains(.maskControl) { parts.append("⌃") }
-        if flags.contains(.maskShift) { parts.append("⇧") }
-        if flags.contains(.maskAlternate) { parts.append("⌥") }
-        if flags.contains(.maskCommand) { parts.append("⌘") }
-        return parts.isEmpty ? "None" : parts.joined(separator: "")
+        fullScreenMode.displayString(short: true)
     }
 
     var hotkeyDisplayStringLong: String {
-        let flags = CGEventFlags(rawValue: hotkeyModifiers)
-        var parts: [String] = []
-        if flags.contains(.maskControl) { parts.append("⌃ Control") }
-        if flags.contains(.maskShift) { parts.append("⇧ Shift") }
-        if flags.contains(.maskAlternate) { parts.append("⌥ Option") }
-        if flags.contains(.maskCommand) { parts.append("⌘ Command") }
-        return parts.isEmpty ? "None" : parts.joined(separator: " + ")
+        fullScreenMode.displayString(short: false)
     }
 
     var recaptureHotkeyDisplayString: String {
-        let flags = CGEventFlags(rawValue: recaptureHotkeyModifiers)
-        var parts: [String] = []
-        if flags.contains(.maskSecondaryFn) { parts.append("🌐") }
-        if flags.contains(.maskControl) { parts.append("⌃") }
-        if flags.contains(.maskShift) { parts.append("⇧") }
-        if flags.contains(.maskAlternate) { parts.append("⌥") }
-        if flags.contains(.maskCommand) { parts.append("⌘") }
-        return parts.isEmpty ? "None" : parts.joined(separator: "")
+        regionMode.displayString(short: true)
     }
 
     var recaptureHotkeyDisplayStringLong: String {
-        let flags = CGEventFlags(rawValue: recaptureHotkeyModifiers)
-        var parts: [String] = []
-        if flags.contains(.maskSecondaryFn) { parts.append("🌐 Fn") }
-        if flags.contains(.maskControl) { parts.append("⌃ Control") }
-        if flags.contains(.maskShift) { parts.append("⇧ Shift") }
-        if flags.contains(.maskAlternate) { parts.append("⌥ Option") }
-        if flags.contains(.maskCommand) { parts.append("⌘ Command") }
-        return parts.isEmpty ? "None" : parts.joined(separator: " + ")
+        regionMode.displayString(short: false)
+    }
+    
+    // MARK: - Conflict Detection
+    
+    struct HotkeyConflict {
+        let mode1: String
+        let mode2: String
+        let reason: String
+    }
+    
+    func detectConflicts() -> [HotkeyConflict] {
+        var conflicts: [HotkeyConflict] = []
+        
+        let modes: [(String, ScreenshotModeConfig)] = [
+            ("Full Screen", fullScreenMode),
+            ("Drag", dragMode),
+            ("Region", regionMode)
+        ]
+        
+        for i in 0..<modes.count {
+            guard modes[i].1.isEnabled else { continue }
+            for j in (i+1)..<modes.count {
+                guard modes[j].1.isEnabled else { continue }
+                
+                let m1 = modes[i]
+                let m2 = modes[j]
+                
+                if m1.1.modifiers == m2.1.modifiers {
+                    if m1.1.triggerType == m2.1.triggerType {
+                        conflicts.append(HotkeyConflict(
+                            mode1: m1.0,
+                            mode2: m2.0,
+                            reason: "Same hotkey and trigger type — \(m2.0) will be ignored"
+                        ))
+                    }
+                }
+            }
+        }
+        
+        return conflicts
     }
 
     var lastCapturedRegionDisplay: String {
@@ -241,11 +337,27 @@ class AppState: ObservableObject {
     init() {
         let defaults = UserDefaults.standard
 
-        if defaults.object(forKey: "holdThreshold") != nil {
-            self.holdThreshold = defaults.double(forKey: "holdThreshold")
-        } else {
-            self.holdThreshold = 0.25
+        // Load screenshot mode configurations
+        self.fullScreenMode = Self.loadModeConfig(defaults: defaults, key: "fullScreenMode", legacy: (
+            modifiersKey: "hotkeyModifiers",
+            defaultConfig: .defaultFullScreen
+        ))
+        
+        self.dragMode = Self.loadModeConfig(defaults: defaults, key: "dragMode", legacy: (
+            modifiersKey: "hotkeyModifiers",
+            defaultConfig: .defaultDrag
+        ))
+        
+        // For region mode, also check legacy holdThreshold
+        var regionConfig = Self.loadModeConfig(defaults: defaults, key: "regionMode", legacy: (
+            modifiersKey: "recaptureHotkeyModifiers",
+            defaultConfig: .defaultRegion
+        ))
+        // If we loaded from legacy, check if a region was defined (which means it should be enabled)
+        if defaults.object(forKey: "regionMode") == nil && defaults.string(forKey: "lastCapturedRegion") != nil {
+            regionConfig.isEnabled = true
         }
+        self.regionMode = regionConfig
 
         if defaults.object(forKey: "isEnabled") != nil {
             self.isEnabled = defaults.bool(forKey: "isEnabled")
@@ -265,12 +377,6 @@ class AppState: ObservableObject {
             self.showInDock = true
         }
 
-        if defaults.object(forKey: "hotkeyModifiers") != nil {
-            self.hotkeyModifiers = UInt64(defaults.integer(forKey: "hotkeyModifiers"))
-        } else {
-            self.hotkeyModifiers = CGEventFlags.maskAlternate.rawValue
-        }
-
         self.screenshotDirectory = defaults.string(forKey: "screenshotDirectory")
             ?? ScreenshotManager.defaultDirectoryPath
 
@@ -286,12 +392,6 @@ class AppState: ObservableObject {
             self.lastCapturedRegion = nil
         }
 
-        if defaults.object(forKey: "recaptureHotkeyModifiers") != nil {
-            self.recaptureHotkeyModifiers = UInt64(defaults.integer(forKey: "recaptureHotkeyModifiers"))
-        } else {
-            self.recaptureHotkeyModifiers = CGEventFlags.maskSecondaryFn.rawValue
-        }
-
         self.accessibilityStatus = AXIsProcessTrusted() ? .granted : .missing
         self.hasCompletedOnboarding = defaults.bool(forKey: "hasCompletedOnboarding")
         self.skipAccessibilityCheck = defaults.bool(forKey: "skipAccessibilityCheck")
@@ -302,6 +402,60 @@ class AppState: ObservableObject {
 
         observeAppActivation()
         startPermissionPolling()
+        
+        // Migrate legacy holdThreshold to dragMode if present (must be after all properties initialized)
+        if defaults.object(forKey: "dragMode") == nil && defaults.object(forKey: "holdThreshold") != nil {
+            self.dragMode.holdThreshold = defaults.double(forKey: "holdThreshold")
+        }
+    }
+    
+    // MARK: - Mode Config Persistence
+    
+    private static func loadModeConfig(
+        defaults: UserDefaults,
+        key: String,
+        legacy: (modifiersKey: String, defaultConfig: ScreenshotModeConfig)
+    ) -> ScreenshotModeConfig {
+        if let data = defaults.data(forKey: key),
+           let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            return ScreenshotModeConfig(
+                isEnabled: dict["isEnabled"] as? Bool ?? legacy.defaultConfig.isEnabled,
+                modifiers: (dict["modifiers"] as? NSNumber)?.uint64Value ?? legacy.defaultConfig.modifiers,
+                triggerType: TriggerType(rawValue: dict["triggerType"] as? String ?? "") ?? legacy.defaultConfig.triggerType,
+                holdThreshold: dict["holdThreshold"] as? Double ?? legacy.defaultConfig.holdThreshold
+            )
+        }
+        
+        // Fall back to legacy settings
+        var config = legacy.defaultConfig
+        if defaults.object(forKey: legacy.modifiersKey) != nil {
+            config.modifiers = UInt64(defaults.integer(forKey: legacy.modifiersKey))
+        }
+        return config
+    }
+    
+    private func saveModeConfig(_ config: ScreenshotModeConfig, key: String) {
+        let dict: [String: Any] = [
+            "isEnabled": config.isEnabled,
+            "modifiers": NSNumber(value: config.modifiers),
+            "triggerType": config.triggerType.rawValue,
+            "holdThreshold": config.holdThreshold
+        ]
+        if let data = try? JSONSerialization.data(withJSONObject: dict) {
+            UserDefaults.standard.set(data, forKey: key)
+        }
+    }
+    
+    private func saveFullScreenMode() {
+        saveModeConfig(fullScreenMode, key: "fullScreenMode")
+    }
+    
+    private func saveDragMode() {
+        saveModeConfig(dragMode, key: "dragMode")
+    }
+    
+    private func saveRegionMode() {
+        saveModeConfig(regionMode, key: "regionMode")
     }
     
     deinit {
