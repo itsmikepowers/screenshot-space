@@ -33,7 +33,7 @@ struct SearchView: View {
 
                 TextField("Search screenshot text...", text: $query)
                     .textFieldStyle(.plain)
-                    .font(.title3)
+                    .font(.headline)
 
                 if !query.isEmpty {
                     Button {
@@ -45,13 +45,8 @@ struct SearchView: View {
                     .buttonStyle(.borderless)
                 }
 
-                Divider()
-                    .frame(height: 16)
-
                 Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        viewMode = mode == .grid ? "list" : "grid"
-                    }
+                    viewMode = mode == .grid ? "list" : "grid"
                 } label: {
                     Image(systemName: mode == .grid ? "list.bullet" : "square.grid.2x2")
                 }
@@ -59,7 +54,7 @@ struct SearchView: View {
                 .help(mode == .grid ? "Switch to list view" : "Switch to grid view")
             }
             .padding(.horizontal, 20)
-            .padding(.vertical, 14)
+            .padding(.vertical, 12)
 
             Divider()
 

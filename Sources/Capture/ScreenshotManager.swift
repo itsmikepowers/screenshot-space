@@ -127,29 +127,47 @@ enum ScreenshotManager {
             isCaptureInProgress = true
         }
 
-        defer { captureQueue.sync { isCaptureInProgress = false } }
-
-        guard let data = captureRegion(rect) else {
-            logger.warning("Region capture failed — Screen Recording permission may be missing")
-            return
+        // Hide our app windows briefly so they don't appear in the capture
+        DispatchQueue.main.async {
+            for window in NSApp.windows {
+                window.orderOut(nil)
+            }
         }
 
-        let fileURL = generateUniqueFileURL()
+        // Small delay to let windows hide
+        DispatchQueue.global(qos: .userInteractive).asyncAfter(deadline: .now() + 0.05) {
+            defer { captureQueue.sync { isCaptureInProgress = false } }
 
-        do {
-            try data.write(to: fileURL, options: .atomic)
-            logger.info("Region screenshot saved: \(fileURL.lastPathComponent)")
-
-            // Copy to clipboard
-            let pb = NSPasteboard.general
-            pb.clearContents()
-            pb.setData(data, forType: .png)
-
-            DispatchQueue.global(qos: .utility).async {
-                OCRProcessor.process(url: fileURL)
+            guard let data = captureRegion(rect) else {
+                logger.warning("Region capture failed — Screen Recording permission may be missing")
+                return
             }
-        } catch {
-            logger.error("Failed to save region screenshot: \(error.localizedDescription)")
+
+            let fileURL = generateUniqueFileURL()
+
+            do {
+                try data.write(to: fileURL, options: .atomic)
+                logger.info("Region screenshot saved: \(fileURL.lastPathComponent)")
+
+                // Play screenshot sound
+                if let soundURL = URL(string: "/System/Library/Components/CoreAudio.component/Contents/SharedSupport/SystemSounds/system/Screen Capture.aif") {
+                    NSSound(contentsOf: soundURL, byReference: true)?.play()
+                }
+
+                // Copy to clipboard
+                let pb = NSPasteboard.general
+                pb.clearContents()
+                pb.setData(data, forType: .png)
+
+                // Instantly add to gallery
+                ScreenshotStore.shared.addNewScreenshot(url: fileURL)
+
+                DispatchQueue.global(qos: .utility).async {
+                    OCRProcessor.process(url: fileURL)
+                }
+            } catch {
+                logger.error("Failed to save region screenshot: \(error.localizedDescription)")
+            }
         }
     }
 
@@ -259,6 +277,9 @@ enum ScreenshotManager {
         do {
             try data.write(to: fileURL, options: .atomic)
             logger.info("Screenshot saved: \(fileURL.lastPathComponent)")
+            
+            // Instantly add to gallery
+            ScreenshotStore.shared.addNewScreenshot(url: fileURL)
             
             DispatchQueue.global(qos: .utility).async {
                 OCRProcessor.process(url: fileURL)

@@ -315,6 +315,49 @@ class ScreenshotStore: ObservableObject {
         }
     }
 
+    // MARK: - Instant Add (for new captures)
+
+    /// Instantly add a newly captured screenshot to the top of the list with OCR processing indicator.
+    func addNewScreenshot(url: URL) {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            
+            // Get file date
+            let date: Date
+            if let values = try? url.resourceValues(forKeys: [.creationDateKey]),
+               let creationDate = values.creationDate {
+                date = creationDate
+            } else {
+                date = Date()
+            }
+            
+            // Load thumbnail
+            guard let thumbnail = Self.loadThumbnail(from: url) else {
+                Self.logger.warning("Failed to load thumbnail for new screenshot: \(url.lastPathComponent)")
+                return
+            }
+            
+            let item = ScreenshotItem(
+                url: url,
+                filename: url.deletingPathExtension().lastPathComponent,
+                date: date,
+                thumbnail: thumbnail,
+                extractedText: nil,
+                wordCount: nil,
+                isProcessingOCR: true
+            )
+            
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                // Remove if already exists (shouldn't happen, but just in case)
+                self.screenshots.removeAll { $0.url == url }
+                // Insert at the beginning (newest first)
+                self.screenshots.insert(item, at: 0)
+                Self.logger.debug("Instantly added new screenshot: \(url.lastPathComponent)")
+            }
+        }
+    }
+
     // MARK: - Single-Item Actions
 
     func deleteScreenshot(_ item: ScreenshotItem) {

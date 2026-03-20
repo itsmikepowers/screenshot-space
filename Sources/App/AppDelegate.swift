@@ -105,11 +105,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 850, height: 560),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
         window.title = "Screenshot Space"
+        window.titlebarAppearsTransparent = false
+        window.toolbarStyle = .unified
+        
+        // Create an empty toolbar to prevent the sidebar toggle from appearing
+        let toolbar = NSToolbar(identifier: "MainToolbar")
+        toolbar.displayMode = .iconOnly
+        toolbar.showsBaselineSeparator = false
+        window.toolbar = toolbar
+        
+        // Hide the toolbar completely - this removes the sidebar toggle button
+        window.toolbar?.isVisible = false
+        
         window.contentView = NSHostingView(rootView: view)
         window.center()
         window.isReleasedWhenClosed = false

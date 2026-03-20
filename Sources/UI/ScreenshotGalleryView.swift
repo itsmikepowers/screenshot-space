@@ -424,14 +424,9 @@ struct ScreenshotGalleryView: View {
             }
             .buttonStyle(.borderless)
 
-            Divider()
-                .frame(height: 16)
-
             // View mode toggle
             Button {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    viewMode = mode == .grid ? "list" : "grid"
-                }
+                viewMode = mode == .grid ? "list" : "grid"
             } label: {
                 Image(systemName: mode == .grid ? "list.bullet" : "square.grid.2x2")
             }
@@ -440,7 +435,6 @@ struct ScreenshotGalleryView: View {
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
-        .animation(.easeInOut(duration: 0.2), value: selection.isEmpty)
     }
 
     // MARK: - Context Menu
