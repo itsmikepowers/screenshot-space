@@ -132,10 +132,6 @@ struct SettingsView: View {
             Section {
                 Toggle("Show in Menu Bar", isOn: $appState.showInMenuBar)
                 Toggle("Show in Dock", isOn: $appState.showInDock)
-
-                Text("You can always reopen the app from Spotlight or Finder.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
             } header: {
                 Text("Appearance")
             }
@@ -157,15 +153,14 @@ struct SettingsView: View {
                     detail: appState.hasPermission ? nil : appState.accessibilityStatus.detail
                 )
 
-                HStack {
-                    if !appState.hasPermission {
+                if !appState.hasPermission {
+                    HStack {
                         Button("Grant Access") {
                             appState.requestPermission()
                         }
-                    }
-
-                    Button("Check Again") {
-                        appState.refreshSystemAccess()
+                        Button("Check Again") {
+                            appState.refreshSystemAccess()
+                        }
                     }
                 }
                 
@@ -182,7 +177,7 @@ struct SettingsView: View {
                     tint: appState.hasScreenRecordingPermission ? .green : .red,
                     status: appState.hasScreenRecordingPermission ? "Granted" : "Not Granted",
                     detail: appState.hasScreenRecordingPermission
-                        ? "Region recapture can capture screen content."
+                        ? nil
                         : "Required for the Recapture Region feature. Grant in System Settings → Privacy & Security → Screen Recording."
                 )
 
