@@ -740,9 +740,6 @@ class KeyCatcherView: NSView {
                 } else if modifiers == .command && event.charactersIgnoringModifiers == "c" {
                     self.onCopy?()
                     return nil
-                } else if (modifiers == .command || modifiers == .control) && event.charactersIgnoringModifiers == "q" {
-                    NSApp.terminate(nil)
-                    return nil
                 } else if event.keyCode == 53 { // Escape
                     self.onEscape?()
                     return nil

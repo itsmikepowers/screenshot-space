@@ -19,6 +19,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private let shortRetryLimit = 3
     private let recoveryRetryDelay: TimeInterval = 15.0
     private var healthCheckTimer: Timer?
+    /// Handles ⌘Q / ⌃Q for any key window (all tabs, sheets, auxiliary windows) while the app is active.
+    private var globalQuitKeyMonitor: Any?
     
     private let menuDateFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -33,6 +35,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         Self.logger.info("App launched")
         
         setupMainWindow()
+        setupGlobalQuitShortcut()
 
         if appState.showInMenuBar {
             setupStatusItem()
@@ -59,6 +62,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     func applicationWillTerminate(_ notification: Notification) {
         Self.logger.info("App terminating")
+        if let monitor = globalQuitKeyMonitor {
+            NSEvent.removeMonitor(monitor)
+            globalQuitKeyMonitor = nil
+        }
         stopHealthCheck()
         stopMonitoring()
         retryMonitoringWorkItem?.cancel()
@@ -110,6 +117,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         window.makeKeyAndOrderFront(nil)
 
         mainWindow = window
+    }
+
+    private func setupGlobalQuitShortcut() {
+        globalQuitKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            let isQuitCombo =
+                (modifiers == .command || modifiers == .control)
+                && event.charactersIgnoringModifiers == "q"
+            guard isQuitCombo, NSApp.isActive else { return event }
+            NSApp.terminate(nil)
+            return nil
+        }
     }
 
     @objc func showMainWindow() {
