@@ -3,13 +3,13 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleIdentifier</key>
-    <string>com.screenshotspace.app</string>
+    <string>com.screenshotspace.installer</string>
     <key>CFBundleName</key>
-    <string>Screenshot Space</string>
+    <string>Install Screenshot Space</string>
     <key>CFBundleDisplayName</key>
-    <string>Screenshot Space</string>
+    <string>Install Screenshot Space</string>
     <key>CFBundleExecutable</key>
-    <string>ScreenshotSpace</string>
+    <string>ScreenshotSpaceInstaller</string>
     <key>CFBundleVersion</key>
     <string>1.0.13</string>
     <key>CFBundleShortVersionString</key>

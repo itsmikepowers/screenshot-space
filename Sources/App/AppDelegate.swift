@@ -336,20 +336,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func observeStateChanges() {
         appState.$fullScreenMode
+            .dropFirst()
             .sink { [weak self] config in
                 self?.updateEventMonitorConfig()
+                self?.reconcileMonitoring(reason: "fullScreen mode changed")
             }
             .store(in: &cancellables)
         
         appState.$dragMode
+            .dropFirst()
             .sink { [weak self] config in
                 self?.updateEventMonitorConfig()
+                self?.reconcileMonitoring(reason: "drag mode changed")
             }
             .store(in: &cancellables)
         
         appState.$regionMode
+            .dropFirst()
             .sink { [weak self] config in
                 self?.updateEventMonitorConfig()
+                self?.reconcileMonitoring(reason: "region mode changed")
             }
             .store(in: &cancellables)
 
@@ -359,14 +365,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             .sink { path in
                 ScreenshotManager.updateSaveDirectory(to: path)
                 ScreenshotStore.shared.reloadForNewDirectory()
-            }
-            .store(in: &cancellables)
-
-        appState.$isEnabled
-            .removeDuplicates()
-            .dropFirst()
-            .sink { [weak self] _ in
-                self?.reconcileMonitoring(reason: "enabled state changed")
             }
             .store(in: &cancellables)
 
@@ -425,7 +423,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func reconcileMonitoring(reason: String) {
         Self.logger.debug("Reconciling monitoring: \(reason, privacy: .public)")
 
-        guard appState.isEnabled else {
+        // Check if any mode is enabled
+        let anyModeEnabled = appState.fullScreenMode.isEnabled || appState.dragMode.isEnabled || appState.regionMode.isEnabled
+        
+        guard anyModeEnabled else {
             cancelMonitoringRetry()
             stopMonitoring()
             monitoringRetryCount = 0
@@ -452,6 +453,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func updateEventMonitorConfig() {
         guard let monitor = eventMonitor else { return }
+        
+        Self.logger.debug("Updating event monitor config...")
+        Self.logger.debug("FullScreen: enabled=\(self.appState.fullScreenMode.isEnabled), mods=\(self.appState.fullScreenMode.modifiers), tapAndHold=\(self.appState.fullScreenMode.triggerType == .tapAndHold)")
+        Self.logger.debug("Drag: enabled=\(self.appState.dragMode.isEnabled), mods=\(self.appState.dragMode.modifiers), tapAndHold=\(self.appState.dragMode.triggerType == .tapAndHold)")
+        Self.logger.debug("Region: enabled=\(self.appState.regionMode.isEnabled), mods=\(self.appState.regionMode.modifiers), tapAndHold=\(self.appState.regionMode.triggerType == .tapAndHold)")
         
         monitor.fullScreenConfig = HotkeyConfig(
             isEnabled: appState.fullScreenMode.isEnabled,
@@ -594,8 +600,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         healthCheckTimer = nil
     }
     
+    private var anyModeEnabled: Bool {
+        appState.fullScreenMode.isEnabled || appState.dragMode.isEnabled || appState.regionMode.isEnabled
+    }
+    
     private func scheduleMonitoringRetry() {
-        guard appState.isEnabled, eventMonitor == nil else {
+        guard anyModeEnabled, eventMonitor == nil else {
             return
         }
 
@@ -608,7 +618,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         Self.logger.debug("Scheduling monitoring retry \(self.monitoringRetryCount) in \(delay)s")
 
         let workItem = DispatchWorkItem { [weak self] in
-            guard let self = self, self.appState.isEnabled, self.eventMonitor == nil else { return }
+            guard let self = self, self.anyModeEnabled, self.eventMonitor == nil else { return }
             self.retryMonitoringWorkItem = nil
             _ = self.appState.refreshSystemAccess()
         }

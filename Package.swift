@@ -11,6 +11,14 @@ let package = Package(
             swiftSettings: [
                 .swiftLanguageMode(.v5)
             ]
+        ),
+        .executableTarget(
+            name: "ScreenshotSpaceInstaller",
+            path: "InstallerSources",
+            exclude: ["Info.plist"],
+            swiftSettings: [
+                .swiftLanguageMode(.v5)
+            ]
         )
     ]
 )

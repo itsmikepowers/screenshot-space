@@ -67,21 +67,21 @@ struct ScreenshotModeConfig: Equatable {
         isEnabled: true,
         modifiers: CGEventFlags.maskAlternate.rawValue,
         triggerType: .tap,
-        holdThreshold: 0.25
+        holdThreshold: 0.35
     )
     
     static let defaultDrag = ScreenshotModeConfig(
         isEnabled: true,
         modifiers: CGEventFlags.maskAlternate.rawValue,
         triggerType: .tapAndHold,
-        holdThreshold: 0.25
+        holdThreshold: 0.35
     )
     
     static let defaultRegion = ScreenshotModeConfig(
         isEnabled: false,
         modifiers: CGEventFlags([.maskSecondaryFn]).rawValue,
         triggerType: .tap,
-        holdThreshold: 0.25
+        holdThreshold: 0.35
     )
     
     func displayString(short: Bool = true) -> String {
@@ -127,8 +127,9 @@ class AppState: ObservableObject {
         set { dragMode.holdThreshold = newValue }
     }
 
-    @Published var isEnabled: Bool {
-        didSet { UserDefaults.standard.set(isEnabled, forKey: "isEnabled") }
+    /// Computed property - true if any screenshot mode is enabled
+    var isEnabled: Bool {
+        fullScreenMode.isEnabled || dragMode.isEnabled || regionMode.isEnabled
     }
 
     @Published var launchAtLogin: Bool = false {
@@ -358,12 +359,6 @@ class AppState: ObservableObject {
             regionConfig.isEnabled = true
         }
         self.regionMode = regionConfig
-
-        if defaults.object(forKey: "isEnabled") != nil {
-            self.isEnabled = defaults.bool(forKey: "isEnabled")
-        } else {
-            self.isEnabled = true
-        }
 
         if defaults.object(forKey: "showInMenuBar") != nil {
             self.showInMenuBar = defaults.bool(forKey: "showInMenuBar")

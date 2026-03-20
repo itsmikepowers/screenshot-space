@@ -5,17 +5,12 @@ struct ShortcutsView: View {
 
     var body: some View {
         Form {
-            // Master toggle
-            Section {
-                Toggle("Enable Screenshot Shortcuts", isOn: $appState.isEnabled)
-            }
-            
             // Full Screen Screenshot
             ScreenshotModeSection(
                 title: "Full Screen Screenshot",
                 description: "Captures your entire screen instantly.",
                 config: $appState.fullScreenMode,
-                showFnKey: false
+                showFnKey: true
             )
             
             // Drag Screenshot
@@ -23,7 +18,7 @@ struct ShortcutsView: View {
                 title: "Drag Screenshot",
                 description: "Hold the hotkey and drag to select an area to capture.",
                 config: $appState.dragMode,
-                showFnKey: false
+                showFnKey: true
             )
             
             // Region Screenshot
@@ -54,19 +49,20 @@ struct ShortcutsView: View {
                         regionCoordinateFields
                     }
                     
-                    Divider()
-                    
                     // Hotkey configuration
                     HotkeyPicker(modifiers: $appState.regionMode.modifiers, showFnKey: true)
                     
                     TriggerTypePicker(config: $appState.regionMode)
                 }
-                
-                Text("Re-captures a previously defined screen region. Define a region first, then use the hotkey to capture it again.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
             } header: {
-                Text("Region Screenshot")
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Region Screenshot")
+                    Text("Re-captures a previously defined screen region. Define a region first, then use the hotkey to capture it again.")
+                        .font(.caption)
+                        .fontWeight(.regular)
+                        .foregroundColor(.secondary)
+                        .textCase(nil)
+                }
             }
             
             // Conflict warnings
@@ -156,12 +152,15 @@ struct ScreenshotModeSection: View {
                 HotkeyPicker(modifiers: $config.modifiers, showFnKey: showFnKey)
                 TriggerTypePicker(config: $config)
             }
-            
-            Text(description)
-                .font(.caption)
-                .foregroundColor(.secondary)
         } header: {
-            Text(title)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                Text(description)
+                    .font(.caption)
+                    .fontWeight(.regular)
+                    .foregroundColor(.secondary)
+                    .textCase(nil)
+            }
         }
     }
 }

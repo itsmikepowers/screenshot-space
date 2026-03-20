@@ -16,6 +16,7 @@ enum ScreenshotManager {
     }()
     
     private static var isCaptureInProgress = false
+    private static var isRegionCaptureInProgress = false
     private static let captureQueue = DispatchQueue(label: "com.screenshotspace.capture")
 
     /// Default screenshot directory path.
@@ -53,14 +54,20 @@ enum ScreenshotManager {
 
     /// Full-screen screenshot to clipboard (Cmd+Shift+Ctrl+3), then save to folder.
     static func captureFullScreen() {
+        var shouldProceed = false
         captureQueue.sync {
+            // Don't block if only region capture is in progress (it uses different mechanism)
             guard !isCaptureInProgress else {
-                logger.debug("Capture already in progress, ignoring request")
+                logger.debug("Capture already in progress, ignoring full screen request")
                 return
             }
             isCaptureInProgress = true
+            shouldProceed = true
         }
         
+        guard shouldProceed else { return }
+        
+        logger.info("Starting full screen capture")
         let previousChangeCount = NSPasteboard.general.changeCount
 
         DispatchQueue.global(qos: .userInteractive).async {
@@ -72,7 +79,10 @@ enum ScreenshotManager {
             attempt: 0,
             maxAttempts: 30,
             interval: 0.1,
-            onComplete: { captureQueue.sync { isCaptureInProgress = false } }
+            onComplete: { 
+                captureQueue.sync { isCaptureInProgress = false }
+                logger.debug("Full screen capture complete")
+            }
         )
     }
 
@@ -117,56 +127,115 @@ enum ScreenshotManager {
         return rep.representation(using: .png, properties: [:])
     }
 
-    /// Capture a specific region, save to disk, copy to clipboard, and trigger OCR.
+    /// Capture a specific region by taking a full-screen screenshot and cropping.
+    /// Uses native screencapture command so no Screen Recording permission needed.
+    /// The rect is in CG coordinates (top-left origin).
     static func captureAndSaveRegion(_ rect: CGRect) {
+        var shouldProceed = false
         captureQueue.sync {
-            guard !isCaptureInProgress else {
-                logger.debug("Capture already in progress, ignoring region recapture")
+            // Region capture uses its own flag - doesn't block other captures
+            guard !isRegionCaptureInProgress else {
+                logger.debug("Region capture already in progress, ignoring")
                 return
             }
-            isCaptureInProgress = true
+            isRegionCaptureInProgress = true
+            shouldProceed = true
         }
-
-        // Hide our app windows briefly so they don't appear in the capture
-        DispatchQueue.main.async {
-            for window in NSApp.windows {
-                window.orderOut(nil)
+        
+        guard shouldProceed else { return }
+        
+        logger.info("Starting region capture")
+        
+        // Use screencapture command to capture full screen to a temp file (no clipboard)
+        // This avoids any interference with clipboard-based polling
+        let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent("screenshot_temp_\(UUID().uuidString).png")
+        
+        DispatchQueue.global(qos: .userInteractive).async {
+            defer {
+                captureQueue.sync {
+                    isRegionCaptureInProgress = false
+                }
+                logger.debug("Region capture complete")
             }
-        }
-
-        // Small delay to let windows hide
-        DispatchQueue.global(qos: .userInteractive).asyncAfter(deadline: .now() + 0.05) {
-            defer { captureQueue.sync { isCaptureInProgress = false } }
-
-            guard let data = captureRegion(rect) else {
-                logger.warning("Region capture failed — Screen Recording permission may be missing")
-                return
-            }
-
-            let fileURL = generateUniqueFileURL()
-
+            
+            // Capture full screen to temp file (silent, no clipboard)
+            let captureProcess = Process()
+            captureProcess.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+            captureProcess.arguments = ["-x", tempFile.path]  // -x = silent
+            
             do {
-                try data.write(to: fileURL, options: .atomic)
+                try captureProcess.run()
+                captureProcess.waitUntilExit()
+                
+                guard captureProcess.terminationStatus == 0,
+                      FileManager.default.fileExists(atPath: tempFile.path) else {
+                    logger.warning("screencapture failed or file not created")
+                    return
+                }
+                
+                // Load the full screenshot
+                guard let fullImageData = try? Data(contentsOf: tempFile),
+                      let fullImage = NSImage(data: fullImageData),
+                      let fullCGImage = fullImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+                    logger.warning("Failed to load screenshot for cropping")
+                    try? FileManager.default.removeItem(at: tempFile)
+                    return
+                }
+                
+                // Clean up temp file
+                try? FileManager.default.removeItem(at: tempFile)
+                
+                // Account for screen scale (Retina displays)
+                let scale = NSScreen.main?.backingScaleFactor ?? 1.0
+                let scaledRect = CGRect(
+                    x: rect.origin.x * scale,
+                    y: rect.origin.y * scale,
+                    width: rect.width * scale,
+                    height: rect.height * scale
+                )
+                
+                // Crop the image
+                guard let croppedCGImage = fullCGImage.cropping(to: scaledRect) else {
+                    logger.warning("Failed to crop image to region")
+                    return
+                }
+                
+                // Convert to PNG data
+                let croppedImage = NSImage(cgImage: croppedCGImage, size: NSSize(width: rect.width, height: rect.height))
+                guard let tiffData = croppedImage.tiffRepresentation,
+                      let bitmap = NSBitmapImageRep(data: tiffData),
+                      let pngData = bitmap.representation(using: .png, properties: [:]) else {
+                    logger.warning("Failed to convert cropped image to PNG")
+                    return
+                }
+                
+                // Save to file
+                let fileURL = generateUniqueFileURL()
+                try pngData.write(to: fileURL, options: .atomic)
                 logger.info("Region screenshot saved: \(fileURL.lastPathComponent)")
-
+                
                 // Play screenshot sound
                 if let soundURL = URL(string: "/System/Library/Components/CoreAudio.component/Contents/SharedSupport/SystemSounds/system/Screen Capture.aif") {
                     NSSound(contentsOf: soundURL, byReference: true)?.play()
                 }
-
-                // Copy to clipboard
+                
+                // Copy cropped image to clipboard
                 let pb = NSPasteboard.general
                 pb.clearContents()
-                pb.setData(data, forType: .png)
-
-                // Instantly add to gallery
-                ScreenshotStore.shared.addNewScreenshot(url: fileURL)
-
+                pb.setData(pngData, forType: .png)
+                
+                // Add to gallery
+                DispatchQueue.main.async {
+                    ScreenshotStore.shared.addNewScreenshot(url: fileURL)
+                }
+                
+                // OCR processing
                 DispatchQueue.global(qos: .utility).async {
                     OCRProcessor.process(url: fileURL)
                 }
             } catch {
-                logger.error("Failed to save region screenshot: \(error.localizedDescription)")
+                logger.error("Failed region capture: \(error.localizedDescription)")
+                try? FileManager.default.removeItem(at: tempFile)
             }
         }
     }

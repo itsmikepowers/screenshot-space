@@ -35,7 +35,7 @@ Update these files, replacing the old version with the new one:
 swift build -c release
 ```
 
-### 3. Create app bundle
+### 3. Create app bundles (main app + installer)
 
 ```bash
 APP_BUNDLE=".build/release/Screenshot Space.app"
@@ -45,6 +45,15 @@ cp .build/release/ScreenshotSpace "$APP_BUNDLE/Contents/MacOS/ScreenshotSpace"
 cp Info.plist "$APP_BUNDLE/Contents/"
 if [ -f "Assets/AppIcon/AppIcon.icns" ]; then
   cp "Assets/AppIcon/AppIcon.icns" "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
+fi
+
+INSTALLER_BUNDLE=".build/release/Install Screenshot Space.app"
+rm -rf "$INSTALLER_BUNDLE"
+mkdir -p "$INSTALLER_BUNDLE/Contents/MacOS" "$INSTALLER_BUNDLE/Contents/Resources"
+cp .build/release/ScreenshotSpaceInstaller "$INSTALLER_BUNDLE/Contents/MacOS/ScreenshotSpaceInstaller"
+cp InstallerSources/Info.plist "$INSTALLER_BUNDLE/Contents/"
+if [ -f "Assets/AppIcon/AppIcon.icns" ]; then
+  cp "Assets/AppIcon/AppIcon.icns" "$INSTALLER_BUNDLE/Contents/Resources/AppIcon.icns"
 fi
 ```
 
@@ -56,9 +65,17 @@ codesign --force --deep --options runtime \
   "$APP_BUNDLE"
 
 codesign --verify --deep --strict "$APP_BUNDLE"
+
+codesign --force --deep --options runtime \
+  --sign "Developer ID Application: Michael Powers (83955LP5FK)" \
+  "$INSTALLER_BUNDLE"
+
+codesign --verify --deep --strict "$INSTALLER_BUNDLE"
 ```
 
 ### 5. Create ZIP and submit for notarization
+
+Submit both apps for notarization:
 
 ```bash
 rm -f /tmp/ScreenshotSpace-notarize.zip
@@ -69,21 +86,32 @@ xcrun notarytool submit /tmp/ScreenshotSpace-notarize.zip \
   --wait
 ```
 
-This typically takes 1-5 minutes. Wait for `status: Accepted`.
+```bash
+rm -f /tmp/ScreenshotSpaceInstaller-notarize.zip
+ditto -c -k --keepParent "$INSTALLER_BUNDLE" /tmp/ScreenshotSpaceInstaller-notarize.zip
 
-### 6. Staple the notarization ticket
+xcrun notarytool submit /tmp/ScreenshotSpaceInstaller-notarize.zip \
+  --keychain-profile "notary-screenshot-space" \
+  --wait
+```
+
+Each submission typically takes 1-5 minutes. Wait for `status: Accepted` on both.
+
+### 6. Staple the notarization tickets
 
 ```bash
 xcrun stapler staple "$APP_BUNDLE"
+xcrun stapler staple "$INSTALLER_BUNDLE"
 ```
 
 ### 7. Verify with Gatekeeper
 
 ```bash
 spctl --assess --type execute --verbose=2 "$APP_BUNDLE"
+spctl --assess --type execute --verbose=2 "$INSTALLER_BUNDLE"
 ```
 
-Should show `source=Notarized Developer ID`.
+Both should show `source=Notarized Developer ID`.
 
 ### 8. Build DMG from notarized app
 
@@ -101,6 +129,7 @@ Create the writable DMG:
 ```bash
 VERSION="X.Y.Z"  # use the version from input
 APP_BUNDLE=".build/release/Screenshot Space.app"
+INSTALLER_BUNDLE=".build/release/Install Screenshot Space.app"
 DMG_OUTPUT=".build/release/ScreenshotSpace-${VERSION}.dmg"
 TEMP_DMG=".build/release/temp-ScreenshotSpace.dmg"
 STAGING_DIR=".build/release/dmg-staging"
@@ -108,6 +137,7 @@ STAGING_DIR=".build/release/dmg-staging"
 rm -rf "$STAGING_DIR" "$DMG_OUTPUT" "$TEMP_DMG"
 mkdir -p "$STAGING_DIR"
 cp -R "$APP_BUNDLE" "$STAGING_DIR/"
+cp -R "$INSTALLER_BUNDLE" "$STAGING_DIR/"
 
 hdiutil create -volname "Screenshot Space" -srcfolder "$STAGING_DIR" -ov -format UDRW "$TEMP_DMG"
 ```
@@ -144,15 +174,16 @@ tell application "Finder"
         set current view of container window to icon view
         set toolbar visible of container window to false
         set statusbar visible of container window to false
-        set bounds of container window to {200, 120, 740, 400}
+        set bounds of container window to {200, 120, 820, 420}
         set viewOptions to icon view options of container window
         set arrangement of viewOptions to not arranged
-        set icon size of viewOptions to 80
+        set icon size of viewOptions to 72
         try
             set background picture of viewOptions to file ".background:background.png"
         end try
-        set position of item "Screenshot Space.app" to {135, 100}
-        set position of item "Applications" to {405, 100}
+        set position of item "Screenshot Space.app" to {135, 120}
+        set position of item "Install Screenshot Space.app" to {310, 120}
+        set position of item "Applications" to {485, 120}
         close
         open
         close
