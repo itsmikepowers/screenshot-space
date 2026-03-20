@@ -5,7 +5,7 @@ APP_EXECUTABLE="ScreenshotSpace"
 APP_DISPLAY_NAME="Screenshot Space"
 BUILD_DIR=".build/debug"
 DEV_BUNDLE="${BUILD_DIR}/${APP_DISPLAY_NAME}.app"
-ICON_SOURCE="Assets/AppIcon.icns"
+ICON_SOURCE="Assets/AppIcon/AppIcon.icns"
 
 # Check for fswatch
 if ! command -v fswatch &>/dev/null; then

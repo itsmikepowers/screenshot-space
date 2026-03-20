@@ -76,8 +76,8 @@ mkdir -p "${APP_BUNDLE}/Contents/Resources"
 cp ".build/release/ScreenshotSpace" "${APP_BUNDLE}/Contents/MacOS/ScreenshotSpace"
 cp "Info.plist" "${APP_BUNDLE}/Contents/"
 
-if [ -f "Assets/AppIcon.icns" ]; then
-  cp "Assets/AppIcon.icns" "${APP_BUNDLE}/Contents/Resources/AppIcon.icns"
+if [ -f "Assets/AppIcon/AppIcon.icns" ]; then
+  cp "Assets/AppIcon/AppIcon.icns" "${APP_BUNDLE}/Contents/Resources/AppIcon.icns"
 fi
 
 # Ad-hoc sign

@@ -106,6 +106,19 @@ Sources/
     └── Updater.swift
 ```
 
+**Assets** (not compiled into the Swift target; copied by build / DMG scripts):
+
+```
+Assets/
+├── AppIcon/             # app bundle icon + source artwork for regenerating .icns
+│   ├── AppIcon.icns     # copied into .app/Contents/Resources (see Info.plist)
+│   ├── AppIcon_rounded.png
+│   └── AppIcon_transparent.png
+└── DMG/                 # used only when running scripts/build-dmg.sh (make dmg)
+    ├── dmg-background.png   # Finder window background on the install disk image
+    └── FolderIcon.icns      # custom icon for the Applications alias on that DMG
+```
+
 ---
 
 ## License

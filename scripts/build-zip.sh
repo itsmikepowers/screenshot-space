@@ -10,7 +10,7 @@ BUILD_DIR=".build/release"
 STAGING_BUNDLE="${BUILD_DIR}/${APP_DISPLAY_NAME}.app"
 VERSION="${VERSION:-1.0.0}"
 ZIP_OUTPUT="${BUILD_DIR}/ScreenshotSpace-${VERSION}.zip"
-ICON_SOURCE="Assets/AppIcon.icns"
+ICON_SOURCE="Assets/AppIcon/AppIcon.icns"
 
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then

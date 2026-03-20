@@ -10,8 +10,8 @@ STAGING_BUNDLE="${BUILD_DIR}/${APP_DISPLAY_NAME}.app"
 DMG_NAME="ScreenshotSpace"
 VERSION="${VERSION:-1.0.0}"
 DMG_OUTPUT="${BUILD_DIR}/${DMG_NAME}-${VERSION}.dmg"
-ICON_SOURCE="Assets/AppIcon.icns"
-FOLDER_ICON="Assets/FolderIcon.icns"
+ICON_SOURCE="Assets/AppIcon/AppIcon.icns"
+FOLDER_ICON="Assets/DMG/FolderIcon.icns"
 
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -85,8 +85,8 @@ if [ -f "${FOLDER_ICON}" ]; then
 fi
 
 mkdir -p "${MOUNT_POINT}/.background"
-if [ -f "Assets/dmg-background.png" ]; then
-  cp "Assets/dmg-background.png" "${MOUNT_POINT}/.background/background.png"
+if [ -f "Assets/DMG/dmg-background.png" ]; then
+  cp "Assets/DMG/dmg-background.png" "${MOUNT_POINT}/.background/background.png"
   echo "    Copied background image"
 fi
 
